@@ -1,0 +1,79 @@
+services:
+  analytics-service:
+    build: ./analytics-service
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+      - AWS_SQS_URL=http://sqs:9324/queue/auth-analytics
+      - AWS_DYNAMODB_TABLE=ToggleMasterAnalytics
+      - AWS_REGION=us-east-1
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/auth_db?sslmode=disable
+      - PORT=8001
+      - MASTER_KEY=supersecretkey
+  
+  evaluation-service:
+    build: ./evaluation-service
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - REDIS_URL=redis:6379
+      - FLAG_SERVICE_URL="http://localhost:8002"
+      - TARGETING_SERVICE_URL="http://localhost:8003"
+      - SERVICE_API_KEY="SUA_CHAVE_DE_SERVICO"
+      - AWS_SQS_URL="[https://sqs.us-east-1.amazonaws.com/123456789012/sua-fila](https://sqs.us-east-1.amazonaws.com/123456789012/sua-fila)"
+      - AWS_REGION="us-east-1" 
+
+  flag-service:
+    build: ./flag-service
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL="postgres://SEU_USUARIO:SUA_SENHA@localhost:5432/flags_db"
+      - PORT="8002"
+      - AUTH_SERVICE_URL="http://localhost:8001"
+
+  targeting-service:
+      build: ./targeting-service
+      ports:
+        - "8003:8003"
+      environment:
+        - DATABASE_URL="postgres://SEU_USUARIO:SUA_SENHA@localhost:5432/targeting_db"
+        - PORT="8003"
+        - AUTH_SERVICE_URL="http://localhost:8001"
+
+
+  dynamodb-local:
+    image: "amazon/dynamodb-local:latest"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    volumes:
+      - "./databases/dynamodb:/home/dynamodblocal/data"
+    working_dir: /home/dynamodblocal
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_db
+    volumes:
+      - ./databases/postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./databases/redis-data:/data 

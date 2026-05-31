@@ -1,0 +1,117 @@
+services:
+  analytics-service:
+    image: analytics-service:0.1
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+      - AWS_SQS_URL=http://localhost:4566/queue/auth-analytics
+      - AWS_DYNAMODB_TABLE=ToggleMasterAnalytics
+      - AWS_REGION=us-east-1
+    networks:
+      - tech-challenger-2-network
+  auth-service:
+    image: auth-service:0.1
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres-secret@postgres-db:5432/auth_db?sslmode=disable
+      - PORT=8001
+      - MASTER_KEY=supersecretkey
+    networks:
+      - tech-challenger-2-network
+    depends_on:
+      - postgres
+
+
+  evaluation-service:
+    image: evaluation-service:0.1
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - REDIS_URL=redis://tech-challenger-2-redis-1:6379
+      - FLAG_SERVICE_URL=http://flag-service:8002
+      - TARGETING_SERVICE_URL=http://targeting-service:8003
+      - SERVICE_API_KEY=SUA_CHAVE_DE_SERVICO
+      - AWS_SQS_URL=http://localhost:4566/queue/auth-analytics
+      - AWS_REGION=us-east-1 
+    networks:
+      - tech-challenger-2-network
+    depends_on:
+      - redis
+      - flag-service
+      - targeting-service
+
+
+  flag-service:
+    image: flag-service:0.1
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres-secret@postgres-db:5432/flags_db
+      - PORT=8002
+      - AUTH_SERVICE_URL=http://auth-service:8001
+    networks:
+      - tech-challenger-2-network
+    depends_on:
+      - postgres
+
+
+  targeting-service:
+    image: targeting-service:0.1
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres-secret@postgres-db:5432/targeting_db
+      - PORT=8003
+      - AUTH_SERVICE_URL=http://auth-service:8001
+    networks:
+      - tech-challenger-2-network
+    depends_on:
+      - postgres
+    
+
+  dynamodb-local:
+    image: "amazon/dynamodb-local:latest"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    volumes:
+      - "./databases/dynamodb:/home/dynamodblocal/data"
+    working_dir: /home/dynamodblocal
+    networks:
+      - tech-challenger-2-network
+
+
+  postgres:
+    image: postgres:13
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres-secret
+      POSTGRES_DB: auth_db
+    deploy:
+      replicas: 2
+    volumes:
+      - ./databases/postgres-data:/var/lib/postgresql/data
+      - ./flag-service/db/init.sql:/docker-entrypoint-initdb.d/flags_db.sql
+      - ./targeting-service/db/init.sql:/docker-entrypoint-initdb.d/targeting_db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - tech-challenger-2-network
+
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./databases/redis-data:/data 
+    networks:
+      - tech-challenger-2-network
+
+networks:
+  tech-challenger-2-network:
