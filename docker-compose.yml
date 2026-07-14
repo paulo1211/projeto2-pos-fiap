@@ -1,17 +1,21 @@
 services:
   analytics-service:
+    build: ./analytics-service
     image: analytics-service:0.1
     restart: always
     ports:
       - "8005:8005"
     environment:
       - PORT=8005
-      - AWS_SQS_URL=http://localhost:4566/queue/auth-analytics
+      - AWS_SQS_URL=http://sqs-local:9324/000000000000/auth-analytics
       - AWS_DYNAMODB_TABLE=ToggleMasterAnalytics
       - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=mockaccesskey
+      - AWS_SECRET_ACCESS_KEY=mocksecretkey
     networks:
       - tech-challenger-2-network
   auth-service:
+    build: ./auth-service
     image: auth-service:0.1
     restart: always
     environment:
@@ -21,24 +25,25 @@ services:
     networks:
       - tech-challenger-2-network
     depends_on:
-      - postgres-primary
-    deploy:
-      replicas: 2
-
+      postgres-primary:
+        condition: service_healthy
 
   evaluation-service:
+    build: ./evaluation-service
     image: evaluation-service:0.1
     restart: always
     ports:
       - "8004:8004"
     environment:
       - PORT=8004
-      - REDIS_URL=redis://tech-challenger-2-redis-1:6379
+      - REDIS_URL=redis://redis:6379
       - FLAG_SERVICE_URL=http://flag-service:8002
       - TARGETING_SERVICE_URL=http://targeting-service:8003
-      - SERVICE_API_KEY=SUA_CHAVE_DE_SERVICO
-      - AWS_SQS_URL=http://localhost:4566/queue/auth-analytics
-      - AWS_REGION=us-east-1 
+      - SERVICE_API_KEY=tm_key_2615b64fd5171634efb65691b0c965a1239f0b99fe74078a41488c2eba1ee415
+      - AWS_SQS_URL=http://sqs-local:9324/000000000000/auth-analytics
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=mockaccesskey
+      - AWS_SECRET_ACCESS_KEY=mocksecretkey
     networks:
       - tech-challenger-2-network
     depends_on:
@@ -46,8 +51,8 @@ services:
       - flag-service
       - targeting-service
 
-
   flag-service:
+    build: ./flag-service
     image: flag-service:0.1
     restart: always
     environment:
@@ -57,12 +62,11 @@ services:
     networks:
       - tech-challenger-2-network
     depends_on:
-      - postgres-primary
-    deploy:
-      replicas: 2
-
+      postgres-primary:
+        condition: service_healthy
 
   targeting-service:
+    build: ./targeting-service
     image: targeting-service:0.1
     restart: always
     environment:
@@ -72,10 +76,17 @@ services:
     networks:
       - tech-challenger-2-network
     depends_on:
-      - postgres-primary
-    deploy:
-      replicas: 2
-    
+      postgres-primary:
+        condition: service_healthy
+
+  sqs-local:
+    image: softwaremill/elasticmq-native:latest
+    container_name: sqs-local
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    networks:
+      - tech-challenger-2-network
 
   dynamodb-local:
     image: "amazon/dynamodb-local:latest"
@@ -88,7 +99,6 @@ services:
     working_dir: /home/dynamodblocal
     networks:
       - tech-challenger-2-network
-
 
   postgres-primary:
     image: bitnami/postgresql:latest
@@ -111,6 +121,12 @@ services:
     networks:
       tech-challenger-2-network:
         ipv4_address: 172.19.0.100
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d auth_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   postgres-replica:
     image: bitnami/postgresql:latest
@@ -129,18 +145,18 @@ services:
     ports:
       - "5433:5432"
     depends_on:
-      - postgres-primary
+      postgres-primary:
+        condition: service_healthy
     networks:
       tech-challenger-2-network:
         ipv4_address: 172.19.0.101
-
 
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
     volumes:
-      - ./databases/redis-data:/data 
+      - ./databases/redis-data:/data
     networks:
       - tech-challenger-2-network
 
