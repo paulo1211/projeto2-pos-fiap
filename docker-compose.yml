@@ -19,7 +19,7 @@ services:
     image: auth-service:0.1
     restart: always
     environment:
-      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/auth_db?sslmode=disable&target_session_attrs=any
+      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/auth_db?sslmode=disable&target_session_attrs=read-write
       - PORT=8001
       - MASTER_KEY=supersecretkey
     networks:
@@ -56,7 +56,7 @@ services:
     image: flag-service:0.1
     restart: always
     environment:
-      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/flags_db?target_session_attrs=any
+      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/flags_db?target_session_attrs=read-write
       - PORT=8002
       - AUTH_SERVICE_URL=http://auth-service:8001
     networks:
@@ -70,7 +70,7 @@ services:
     image: targeting-service:0.1
     restart: always
     environment:
-      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/targeting_db?target_session_attrs=any
+      - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/targeting_db?target_session_attrs=read-write
       - PORT=8003
       - AUTH_SERVICE_URL=http://auth-service:8001
     networks:
@@ -101,16 +101,21 @@ services:
       - tech-challenger-2-network
 
   postgres-primary:
-    image: bitnami/postgresql:latest
+    image: bitnamilegacy/postgresql-repmgr:15
     container_name: postgres-primary
     environment:
       - POSTGRESQL_POSTGRES_PASSWORD=postgres-secret
       - POSTGRESQL_USERNAME=postgres
       - POSTGRESQL_PASSWORD=postgres-secret
       - POSTGRESQL_DATABASE=auth_db
-      - POSTGRESQL_REPLICATION_MODE=master
-      - POSTGRESQL_REPLICATION_USER=repl_user
-      - POSTGRESQL_REPLICATION_PASSWORD=repl_password
+      - REPMGR_PRIMARY_HOST=172.19.0.100
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=172.19.0.100,172.19.0.101:5432
+      - REPMGR_NODE_NAME=postgres-primary-1
+      - REPMGR_NODE_ID=1
+      - REPMGR_NODE_NETWORK_NAME=172.19.0.100
+      - REPMGR_PORT_NUMBER=5432
+      - REPMGR_PASSWORD=repl_password
     volumes:
       - postgres-primary-data:/bitnami/postgresql
       - ./auth-service/db/init.sql:/docker-entrypoint-initdb.d/auth_db.sql
@@ -129,17 +134,21 @@ services:
       start_period: 10s
 
   postgres-replica:
-    image: bitnami/postgresql:latest
+    image: bitnamilegacy/postgresql-repmgr:15
     container_name: postgres-replica
     environment:
       - POSTGRESQL_POSTGRES_PASSWORD=postgres-secret
       - POSTGRESQL_USERNAME=postgres
       - POSTGRESQL_PASSWORD=postgres-secret
-      - POSTGRESQL_MASTER_HOST=172.19.0.100
-      - POSTGRESQL_MASTER_PORT_NUMBER=5432
-      - POSTGRESQL_REPLICATION_MODE=slave
-      - POSTGRESQL_REPLICATION_USER=repl_user
-      - POSTGRESQL_REPLICATION_PASSWORD=repl_password
+      - POSTGRESQL_DATABASE=auth_db
+      - REPMGR_PRIMARY_HOST=172.19.0.100
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=172.19.0.100,172.19.0.101:5432
+      - REPMGR_NODE_NAME=postgres-replica-2
+      - REPMGR_NODE_ID=2
+      - REPMGR_NODE_NETWORK_NAME=172.19.0.101
+      - REPMGR_PORT_NUMBER=5432
+      - REPMGR_PASSWORD=repl_password
     volumes:
       - postgres-replica-data:/bitnami/postgresql
     ports:
