@@ -1,0 +1,178 @@
+name: _ci-python-service
+
+on:
+  workflow_call:
+    inputs:
+      service_path:
+        required: true
+        type: string
+      service_name:
+        required: true
+        type: string
+      python_version:
+        required: false
+        type: string
+        default: "3.10"
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_REGION:
+        required: true
+      ECR_REGISTRY:
+        required: true
+
+permissions:
+  contents: write
+  security-events: write
+
+jobs:
+  build-and-test:
+    name: Build & Unit Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.service_path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Compile check
+        run: python -m py_compile *.py
+
+      - name: pytest
+        run: |
+          if compgen -G "test_*.py" > /dev/null || compgen -G "*_test.py" > /dev/null || [ -d tests ]; then
+            pytest -v
+          else
+            echo "No unit tests found, skipping."
+          fi
+
+  lint:
+    name: Linter/Static Analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.service_path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install linters
+        run: pip install flake8 pylint
+
+      - name: flake8
+        run: flake8 --max-line-length=120 .
+
+      - name: pylint
+        run: pylint --fail-under=6 $(git ls-files '*.py') || true
+
+  security-scan:
+    name: Security Scan (SAST & SCA)
+    runs-on: ubuntu-latest
+    needs: [build-and-test, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SCA - Trivy filesystem scan (dependencies)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.service_path }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          format: table
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: SAST - bandit
+        working-directory: ${{ inputs.service_path }}
+        run: bandit -r . -ll -iii
+
+  docker-build-push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: [security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=v1.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          docker build -t ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }} ${{ inputs.service_path }}
+
+      - name: Container Scan - Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}
+          severity: CRITICAL
+          exit-code: "1"
+          format: table
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag & push image to ECR
+        run: |
+          IMAGE="${{ secrets.ECR_REGISTRY }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
+          docker tag ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }} "$IMAGE"
+          docker push "$IMAGE"
+
+  update-gitops:
+    name: Update GitOps manifest
+    runs-on: ubuntu-latest
+    needs: [docker-build-push]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump image tag in gitops manifest
+        env:
+          NEW_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
+          REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          set -euo pipefail
+          FILE="gitops/apps/${{ inputs.service_name }}/deployment.yaml"
+          sed -i -E "s#^(\s*image:\s*).*#\1${REGISTRY}/${{ inputs.service_name }}:${NEW_TAG}#" "$FILE"
+          git diff "$FILE"
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gitops/apps/${{ inputs.service_name }}/deployment.yaml
+          git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${{ needs.docker-build-push.outputs.image_tag }} [skip ci]" || echo "no changes to commit"
+          git push
