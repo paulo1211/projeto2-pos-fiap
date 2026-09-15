@@ -74,6 +74,16 @@ module "argocd" {
   depends_on = [module.eks]
 }
 
+# KEDA is a cluster addon (like ArgoCD) so it's provisioned here via
+# Terraform/Helm, not as an ArgoCD-managed Application: analytics-service's
+# ScaledObject (gitops/apps/analytics-service/scaledobject.yaml) needs its
+# CRDs to exist before ArgoCD can ever sync that app.
+module "keda" {
+  source = "./modules/keda"
+
+  depends_on = [module.eks]
+}
+
 # --- IRSA permissions for the workload service account ---------------------
 # Grants the ServiceAccount used by evaluation-service/analytics-service
 # (system:serviceaccount:togglemaster:togglemaster-workload, see

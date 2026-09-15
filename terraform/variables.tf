@@ -31,7 +31,7 @@ variable "private_subnet_cidrs" {
 
 variable "eks_cluster_version" {
   type    = string
-  default = "1.30"
+  default = "1.31"
 }
 
 variable "node_instance_types" {
