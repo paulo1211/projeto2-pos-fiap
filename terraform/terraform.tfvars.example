@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and adjust as needed. All values below are the
+# module defaults; you only need to override what's different for your
+# account/region.
+
+# project_name = "togglemaster"
+# aws_region   = "us-east-1"
+# azs          = ["us-east-1a", "us-east-1b"]
