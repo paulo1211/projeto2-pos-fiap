@@ -185,7 +185,12 @@ jobs:
             sed -i -E "s#^(\s*image:\s*).*#\1${REGISTRY}/${{ inputs.service_name }}:${NEW_TAG}#" "$FILE"
             git diff "$FILE"
             git add "$FILE"
-            git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${NEW_TAG} [skip ci]" || { echo "no changes to commit"; exit 0; }
+            # TEMP DEBUG: surface the actual REGISTRY value in the commit
+            # message itself (readable via `git log`/`git show` without any
+            # GitHub Actions log access) since needs.docker-build-push
+            # .outputs.registry has repeatedly come back empty here for
+            # reasons we haven't nailed down yet.
+            git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${NEW_TAG} [skip ci]" -m "DEBUG: REGISTRY=[${REGISTRY}] len=${#REGISTRY}" || { echo "no changes to commit"; exit 0; }
 
             if git push origin HEAD:main; then
               exit 0
