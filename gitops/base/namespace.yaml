@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: togglemaster
+  labels:
+    app.kubernetes.io/name: togglemaster
+    app.kubernetes.io/part-of: togglemaster-ecosystem
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: togglemaster-workload
+  namespace: togglemaster
+  annotations:
+    # Filled in after `terraform apply`: eks.amazonaws.com/role-arn: <workload_irsa_role_arn output>
+    eks.amazonaws.com/role-arn: "REPLACE_WITH_TERRAFORM_OUTPUT_workload_irsa_role_arn"

@@ -1,0 +1,24 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: analytics-service-scaledobject
+  namespace: togglemaster
+  labels:
+    app: analytics-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: analytics-service
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  cooldownPeriod: 10
+  pollingInterval: 15
+  triggers:
+    - type: aws-sqs-queue
+      metadata:
+        # Replace with the terraform output `sqs_queue_url` after `terraform apply`.
+        queueURL: "REPLACE_WITH_TERRAFORM_OUTPUT_sqs_queue_url"
+        queueLength: "5"
+        awsRegion: "us-east-1"
+        identityOwner: operator
