@@ -20,8 +20,6 @@ on:
         required: true
       AWS_REGION:
         required: true
-      ECR_REGISTRY:
-        required: true
 
 permissions:
   contents: write
@@ -101,6 +99,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
+      registry: ${{ steps.ecr-login.outputs.registry }}
     steps:
       - uses: actions/checkout@v4
 
@@ -133,7 +132,7 @@ jobs:
 
       - name: Tag & push image to ECR
         run: |
-          IMAGE="${{ secrets.ECR_REGISTRY }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
           docker tag ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }} "$IMAGE"
           docker push "$IMAGE"
 
@@ -149,7 +148,7 @@ jobs:
       - name: Bump image tag in gitops manifest
         env:
           NEW_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
-          REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          REGISTRY: ${{ needs.docker-build-push.outputs.registry }}
         run: |
           set -euo pipefail
           FILE="gitops/apps/${{ inputs.service_name }}/deployment.yaml"
