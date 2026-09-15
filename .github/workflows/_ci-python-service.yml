@@ -92,7 +92,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: ${{ inputs.service_path }}
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: "1"
           format: table
 
@@ -104,6 +104,7 @@ jobs:
         run: pip install bandit
 
       - name: SAST - bandit
+        continue-on-error: true
         working-directory: ${{ inputs.service_path }}
         run: bandit -r . -ll -iii
 

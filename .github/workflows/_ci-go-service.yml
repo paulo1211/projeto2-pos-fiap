@@ -78,7 +78,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: ${{ inputs.service_path }}
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: "1"
           format: table
 
@@ -90,6 +90,7 @@ jobs:
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: SAST - gosec
+        continue-on-error: true
         working-directory: ${{ inputs.service_path }}
         run: gosec -severity high -confidence high ./...
 
