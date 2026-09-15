@@ -75,7 +75,7 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
 
   secret_id = aws_secretsmanager_secret.db_credentials[each.key].id
   secret_string = jsonencode({
-    database_url = "postgres://${var.master_username}:${random_password.master[each.key].result}@${aws_db_instance.this[each.key].address}:5432/${each.value.db_name}?sslmode=require"
+    database_url = "postgres://${var.master_username}:${urlencode(random_password.master[each.key].result)}@${aws_db_instance.this[each.key].address}:5432/${each.value.db_name}?sslmode=require"
     host         = aws_db_instance.this[each.key].address
     port         = 5432
     db_name      = each.value.db_name

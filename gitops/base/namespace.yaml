@@ -12,5 +12,4 @@ metadata:
   name: togglemaster-workload
   namespace: togglemaster
   annotations:
-    # Filled in after `terraform apply`: eks.amazonaws.com/role-arn: <workload_irsa_role_arn output>
-    eks.amazonaws.com/role-arn: "REPLACE_WITH_TERRAFORM_OUTPUT_workload_irsa_role_arn"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::775419744057:role/togglemaster-workload-irsa-role"

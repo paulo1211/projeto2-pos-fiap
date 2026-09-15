@@ -17,8 +17,7 @@ spec:
   triggers:
     - type: aws-sqs-queue
       metadata:
-        # Replace with the terraform output `sqs_queue_url` after `terraform apply`.
-        queueURL: "REPLACE_WITH_TERRAFORM_OUTPUT_sqs_queue_url"
+        queueURL: "https://sqs.us-east-1.amazonaws.com/775419744057/evaluation-analytics"
         queueLength: "5"
         awsRegion: "us-east-1"
-        identityOwner: operator
+        identityOwner: pod

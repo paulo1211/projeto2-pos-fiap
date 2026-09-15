@@ -12,9 +12,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-AUTH_DB_URL=$(aws secretsmanager get-secret-value --secret-id togglemaster/auth/database-url --query SecretString --output text | jq -r .database_url)
-FLAG_DB_URL=$(aws secretsmanager get-secret-value --secret-id togglemaster/flag/database-url --query SecretString --output text | jq -r .database_url)
-TARGETING_DB_URL=$(aws secretsmanager get-secret-value --secret-id togglemaster/targeting/database-url --query SecretString --output text | jq -r .database_url)
+# Don't rely on the caller's AWS CLI default region (`aws configure get
+# region`) — it may point elsewhere (e.g. us-west-2) while every resource
+# here lives in the region Terraform actually deployed to.
+AWS_REGION="${AWS_REGION:-us-east-1}"
+
+AUTH_DB_URL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id togglemaster/auth/database-url --query SecretString --output text | jq -r .database_url)
+FLAG_DB_URL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id togglemaster/flag/database-url --query SecretString --output text | jq -r .database_url)
+TARGETING_DB_URL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id togglemaster/targeting/database-url --query SecretString --output text | jq -r .database_url)
 
 REDIS_HOST=$(terraform output -raw redis_primary_endpoint)
 SQS_URL=$(terraform output -raw sqs_queue_url)
