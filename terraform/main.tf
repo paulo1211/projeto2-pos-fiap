@@ -81,7 +81,50 @@ module "argocd" {
 module "keda" {
   source = "./modules/keda"
 
+  operator_role_arn = aws_iam_role.keda_operator_irsa.arn
+
   depends_on = [module.eks]
+}
+
+# IRSA for the keda-operator ServiceAccount: the aws-sqs-queue scaler makes
+# its GetQueueAttributes calls from the operator pod itself, so the operator
+# (not the scaled workload) needs its own AWS identity.
+resource "aws_iam_role" "keda_operator_irsa" {
+  name = "${var.project_name}-keda-operator-irsa-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = module.eks.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(module.eks.oidc_provider_url, "https://", "")}:sub" = "system:serviceaccount:keda:keda-operator"
+          "${replace(module.eks.oidc_provider_url, "https://", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy" "keda_operator_permissions" {
+  name = "${var.project_name}-keda-operator-permissions"
+  role = aws_iam_role.keda_operator_irsa.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "SQSScalerRead"
+      Effect   = "Allow"
+      Action   = ["sqs:GetQueueAttributes"]
+      Resource = module.sqs.queue_arn
+    }]
+  })
 }
 
 # --- IRSA permissions for the workload service account ---------------------

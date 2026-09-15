@@ -12,4 +12,9 @@ resource "helm_release" "keda" {
   version    = var.chart_version
 
   create_namespace = false
+
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = var.operator_role_arn
+  }
 }
