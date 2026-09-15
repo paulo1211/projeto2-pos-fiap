@@ -126,21 +126,24 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # Captured into its own step output (rather than reading
-      # steps.ecr-login.outputs.registry directly in the job's `outputs:`)
-      # because that cross-job reference was coming back empty by the time
-      # update-gitops read it, even though the value is correct here.
-      - name: Export registry
+      # Computed ourselves via STS rather than read from
+      # steps.ecr-login.outputs.registry: that output proved unreliable
+      # within this same job (empty in one step even on runs where a later
+      # step's use of the identical expression clearly had it, since the
+      # image did land in the right ECR repo) — likely a bug/race in
+      # aws-actions/amazon-ecr-login@v2 itself. This is deterministic.
+      - name: Compute ECR registry
         id: registry
-        run: echo "value=${{ steps.ecr-login.outputs.registry }}" >> "$GITHUB_OUTPUT"
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "value=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Tag & push image to ECR
         run: |
-          IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
+          IMAGE="${{ steps.registry.outputs.value }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
           docker tag ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }} "$IMAGE"
           docker push "$IMAGE"
 
