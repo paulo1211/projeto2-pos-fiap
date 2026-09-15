@@ -168,32 +168,36 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bump image tag in gitops manifest
+      - name: Bump image tag & push (with retry)
         env:
           NEW_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
           REGISTRY: ${{ needs.docker-build-push.outputs.registry }}
         run: |
           set -euo pipefail
-          FILE="gitops/apps/${{ inputs.service_name }}/deployment.yaml"
-          sed -i -E "s#^(\s*image:\s*).*#\1${REGISTRY}/${{ inputs.service_name }}:${NEW_TAG}#" "$FILE"
-          git diff "$FILE"
-
-      - name: Commit & push
-        run: |
-          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add gitops/apps/${{ inputs.service_name }}/deployment.yaml
-          git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${{ needs.docker-build-push.outputs.image_tag }} [skip ci]" || echo "no changes to commit"
+          FILE="gitops/apps/${{ inputs.service_name }}/deployment.yaml"
 
+          # Re-fetch, re-apply the sed and re-commit on every attempt (rather
+          # than committing once and rebasing that commit) so a concurrent
+          # run touching the same image: line can never produce a merge
+          # conflict — each attempt just overwrites the line again on top of
+          # whatever is latest on origin/main.
           for attempt in 1 2 3 4 5; do
-            if git push; then
+            git fetch origin main
+            git reset --hard origin/main
+
+            sed -i -E "s#^(\s*image:\s*).*#\1${REGISTRY}/${{ inputs.service_name }}:${NEW_TAG}#" "$FILE"
+            git diff "$FILE"
+            git add "$FILE"
+            git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${NEW_TAG} [skip ci]" || { echo "no changes to commit"; exit 0; }
+
+            if git push origin HEAD:main; then
               exit 0
             fi
-            echo "Push rejeitado (tentativa $attempt/5), sincronizando com origin/main e tentando de novo..."
+
+            echo "Push rejeitado (tentativa $attempt/5), tentando de novo..."
             sleep $((RANDOM % 5 + 1))
-            git fetch origin main
-            git rebase origin/main
           done
 
           echo "Falha ao dar push após 5 tentativas" >&2
