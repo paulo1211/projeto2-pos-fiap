@@ -140,13 +140,20 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+          # This action masks the resolved AWS account ID by default
+          # (add-mask). That's why every registry value we ever derived in
+          # this job — the login action's own output, and our own "computed
+          # via STS" step — worked fine for same-job use (the push always
+          # landed in the right ECR repo) but came back empty once read from
+          # a *different* job via needs.docker-build-push.outputs.registry:
+          # GitHub Actions scrubs masked values when they cross a job
+          # boundary through outputs. The account ID is already public in
+          # this repo (baked into every gitops/apps/*/deployment.yaml image:
+          # line), so there's nothing to protect by masking it here.
+          mask-aws-account-id: "false"
 
       # Computed ourselves via STS rather than read from
-      # steps.ecr-login.outputs.registry: that output proved unreliable
-      # within this same job (empty in one step even on runs where a later
-      # step's use of the identical expression clearly had it, since the
-      # image did land in the right ECR repo) — likely a bug/race in
-      # aws-actions/amazon-ecr-login@v2 itself. This is deterministic.
+      # steps.ecr-login.outputs.registry, which had the same masking problem.
       - name: Compute ECR registry
         id: registry
         run: |
