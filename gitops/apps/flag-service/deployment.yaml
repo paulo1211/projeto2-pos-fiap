@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: flag-service
-          image: REPLACE_ME/flag-service:v0.0.0-init
+          image: /flag-service:v1.0.0-02bbf75
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8002
