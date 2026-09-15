@@ -113,7 +113,7 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
-      registry: ${{ steps.ecr-login.outputs.registry }}
+      registry: ${{ steps.registry.outputs.value }}
     steps:
       - uses: actions/checkout@v4
 
@@ -144,6 +144,14 @@ jobs:
       - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
+
+      # Captured into its own step output (rather than reading
+      # steps.ecr-login.outputs.registry directly in the job's `outputs:`)
+      # because that cross-job reference was coming back empty by the time
+      # update-gitops read it, even though the value is correct here.
+      - name: Export registry
+        id: registry
+        run: echo "value=${{ steps.ecr-login.outputs.registry }}" >> "$GITHUB_OUTPUT"
 
       - name: Tag & push image to ECR
         run: |
