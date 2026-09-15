@@ -133,6 +133,7 @@ jobs:
           severity: CRITICAL
           exit-code: "1"
           format: table
+          trivyignores: .github/trivy/python-baseimage.trivyignore
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

@@ -1,4 +1,4 @@
-FROM python:3.10.14-slim-bookworm AS builder
+FROM python:3.10.21-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
 	PYTHONUNBUFFERED=1
@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN python -m venv /opt/venv \
 	&& /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.10.14-slim-bookworm AS runtime
+FROM python:3.10.21-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
 	PYTHONUNBUFFERED=1 \

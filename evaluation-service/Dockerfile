@@ -1,11 +1,11 @@
-FROM golang:1.21.13-alpine3.20 AS builder
+FROM golang:1.27.1-alpine3.24 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o evaluation-service .
 
-FROM alpine:3.20.2
+FROM alpine:3.24.1
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates \
