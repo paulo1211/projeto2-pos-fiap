@@ -18,3 +18,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  # KEDA scales this Deployment (including to 0 replicas when the SQS queue
+  # is empty), which would otherwise fight selfHeal: true reverting it back
+  # to the static replica count committed in deployment.yaml on every sync.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: analytics-service
+      jsonPointers:
+        - /spec/replicas

@@ -19,7 +19,7 @@ spec:
       serviceAccountName: togglemaster-workload
       containers:
         - name: analytics-service
-          image: /analytics-service:v1.0.0-7a2ead4
+          image: 775419744057.dkr.ecr.us-east-1.amazonaws.com/analytics-service:v1.0.0-7a2ead4
           imagePullPolicy: Always
           ports:
             - containerPort: 8005
