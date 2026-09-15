@@ -1,0 +1,19 @@
+# CVEs CRITICAL sem correção publicada pela Debian para o bookworm (12) no
+# momento em que este arquivo foi criado (2026-09-15). Nenhuma delas é
+# exercitada pelas aplicações Python (flag/targeting/analytics-service não
+# usam perl, sqlite3 nem chamam as rotinas de escrita de zip afetadas em
+# zlib). Reavaliar periodicamente e remover a entrada assim que a Debian
+# publicar o fix (rodar o Trivy image scan de novo sem este arquivo).
+
+# libsqlite3-0: SQLite integer overflow — sem fix na Debian
+CVE-2025-7458
+
+# perl-base: regex processing / heap overflow / path traversal em archive-tar
+# — sem fix (2 "affected") ou fix adiado (1 "fix_deferred") na Debian
+CVE-2026-13221
+CVE-2026-42496
+CVE-2026-8376
+
+# zlib1g: integer overflow em zipOpenNewFileInZip4_6 — Debian marcou
+# "will_not_fix" para esta versão
+CVE-2023-45853
