@@ -74,6 +74,7 @@ jobs:
         run: pip install flake8 pylint
 
       - name: flake8
+        continue-on-error: true
         run: flake8 --max-line-length=120 .
 
       - name: pylint

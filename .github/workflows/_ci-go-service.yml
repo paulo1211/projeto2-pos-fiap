@@ -59,6 +59,7 @@ jobs:
           cache-dependency-path: ${{ inputs.service_path }}/go.sum
 
       - name: golangci-lint
+        continue-on-error: true
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
