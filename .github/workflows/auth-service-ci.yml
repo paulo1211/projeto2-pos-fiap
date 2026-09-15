@@ -1,6 +1,7 @@
 name: auth-service CI/CD
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
