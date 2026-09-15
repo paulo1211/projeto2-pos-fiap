@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: REPLACE_ME/auth-service:v0.0.0-init
+          image: /auth-service:v1.0.0-c2f99c2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
