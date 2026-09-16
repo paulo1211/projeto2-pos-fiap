@@ -113,7 +113,6 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
-      registry: ${{ steps.registry.outputs.value }}
     steps:
       - uses: actions/checkout@v4
 
@@ -140,32 +139,20 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-          # This action masks the resolved AWS account ID by default
-          # (add-mask). That's why every registry value we ever derived in
-          # this job — the login action's own output, and our own "computed
-          # via STS" step — worked fine for same-job use (the push always
-          # landed in the right ECR repo) but came back empty once read from
-          # a *different* job via needs.docker-build-push.outputs.registry:
-          # GitHub Actions scrubs masked values when they cross a job
-          # boundary through outputs. The account ID is already public in
-          # this repo (baked into every gitops/apps/*/deployment.yaml image:
-          # line), so there's nothing to protect by masking it here.
-          mask-aws-account-id: "false"
-
-      # Computed ourselves via STS rather than read from
-      # steps.ecr-login.outputs.registry, which had the same masking problem.
-      - name: Compute ECR registry
-        id: registry
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          echo "value=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # vars.AWS_ACCOUNT_ID (a repo variable, not a secret — the account ID
+      # is already public in this repo, baked into every
+      # gitops/apps/*/deployment.yaml image: line) instead of resolving it
+      # via STS: any value derived from AWS credentials in this job comes
+      # back empty when read from update-gitops through
+      # needs.docker-build-push.outputs, because GitHub Actions blanks
+      # outputs it considers secret-derived once they cross a job boundary.
       - name: Tag & push image to ECR
         run: |
-          IMAGE="${{ steps.registry.outputs.value }}/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
+          IMAGE="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ inputs.service_name }}:${{ steps.tag.outputs.tag }}"
           docker tag ${{ inputs.service_name }}:${{ steps.tag.outputs.tag }} "$IMAGE"
           docker push "$IMAGE"
 
@@ -181,7 +168,7 @@ jobs:
       - name: Bump image tag & push (with retry)
         env:
           NEW_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
-          REGISTRY: ${{ needs.docker-build-push.outputs.registry }}
+          REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -200,12 +187,7 @@ jobs:
             sed -i -E "s#^(\s*image:\s*).*#\1${REGISTRY}/${{ inputs.service_name }}:${NEW_TAG}#" "$FILE"
             git diff "$FILE"
             git add "$FILE"
-            # TEMP DEBUG: surface the actual REGISTRY value in the commit
-            # message itself (readable via `git log`/`git show` without any
-            # GitHub Actions log access) since needs.docker-build-push
-            # .outputs.registry has repeatedly come back empty here for
-            # reasons we haven't nailed down yet.
-            git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${NEW_TAG} [skip ci]" -m "DEBUG: REGISTRY=[${REGISTRY}] len=${#REGISTRY}" || { echo "no changes to commit"; exit 0; }
+            git commit -m "chore(gitops): deploy ${{ inputs.service_name }} ${NEW_TAG} [skip ci]" || { echo "no changes to commit"; exit 0; }
 
             if git push origin HEAD:main; then
               exit 0
