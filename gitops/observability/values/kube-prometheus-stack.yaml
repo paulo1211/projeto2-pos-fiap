@@ -1,0 +1,121 @@
+# kube-prometheus-stack — Prometheus (métricas) + Grafana (visualização)
+# + kube-state-metrics/node-exporter (métricas de infraestrutura do cluster).
+#
+# As métricas das aplicações NÃO são raspadas pelo Prometheus: elas chegam
+# via OTel Collector (gateway) por remote-write — ver otel-gateway.yaml.
+
+fullnameOverride: kps
+
+crds:
+  enabled: true
+
+# Os alertas da Fase 4 são feitos no Grafana Alerting (contact points
+# PagerDuty / Discord / webhook do self-healing) — o Alertmanager fica
+# desligado para economizar recursos no cluster.
+alertmanager:
+  enabled: false
+
+# Componentes do control plane são gerenciados pela AWS no EKS e não
+# expõem métricas para scraping; deixá-los ligados só gera targets "down".
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+
+prometheus:
+  prometheusSpec:
+    # Endpoint /api/v1/write usado pelo exporter prometheusremotewrite do
+    # OTel Collector gateway.
+    enableRemoteWriteReceiver: true
+    retention: 3d
+    # Sem EBS CSI driver no cluster: armazenamento efêmero (emptyDir).
+    # Suficiente para o ambiente de estudo/demonstração.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
+
+grafana:
+  fullnameOverride: grafana
+
+  # Credenciais vêm de terraform/scripts/sync-observability-secrets.sh
+  # (nunca commitadas no repositório).
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  # Acesso autenticado pelo Kubernetes: kubectl port-forward svc/grafana 3000:80.
+  service:
+    type: ClusterIP
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+  sidecar:
+    datasources:
+      # Datasource padrão do Prometheus criado pelo chart (uid "prometheus").
+      uid: prometheus
+    dashboards:
+      enabled: true
+      # Qualquer ConfigMap com este label vira dashboard (ver
+      # gitops/observability/kustomization.yaml).
+      label: grafana_dashboard
+      labelValue: "1"
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: http://loki.observability.svc.cluster.local:3100
+      jsonData:
+        maxLines: 1000

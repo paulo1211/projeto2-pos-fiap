@@ -35,8 +35,12 @@ variable "eks_cluster_version" {
 }
 
 variable "node_instance_types" {
+  # Fase 4: t3.medium (4 GiB, máx. 17 pods/nó por limite de ENI/IP do VPC
+  # CNI) não comporta a stack de observabilidade (Prometheus, Grafana, Loki,
+  # OTel Collector agent+gateway) junto com os 5 serviços, ArgoCD e KEDA.
+  # t3.large dá 8 GiB e até 35 pods por nó.
   type    = list(string)
-  default = ["t3.medium"]
+  default = ["t3.large"]
 }
 
 variable "node_desired_size" {

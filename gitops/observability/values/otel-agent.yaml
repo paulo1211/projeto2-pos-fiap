@@ -1,0 +1,80 @@
+# OTel Collector — AGENT (DaemonSet, um por nó)
+#
+# Lê os logs de TODOS os contêineres do nó (/var/log/pods via filelog),
+# enriquece com metadados do Kubernetes e encaminha tudo por OTLP para o
+# otel-gateway, que é quem fala com os backends. Também aceita OTLP local
+# (hostPort 4317/4318) e repassa para o gateway.
+
+mode: daemonset
+fullnameOverride: otel-agent
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+presets:
+  logsCollection:
+    enabled: true
+    # Inclui os Collectors; nenhum pipeline exporta payloads para stdout.
+    includeCollectorLogs: true
+    # O preset monta /var/lib/otelcol no nó e executa como root para gravar.
+    storeCheckpoints: true
+  kubernetesAttributes:
+    enabled: true
+
+# Scrape direto das métricas internas; funciona também para o DaemonSet.
+podMonitor:
+  enabled: true
+  metricsEndpoints:
+    - port: metrics
+      interval: 15s
+
+ports:
+  metrics:
+    enabled: true
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 384Mi
+
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    filelog:
+      # Na primeira coleta inclui o histórico ainda presente no nó.
+      # Depois usa o offset persistido, inclusive após recriar o agent.
+      start_at: beginning
+
+  exporters:
+    debug: null
+    otlp/gateway:
+      endpoint: otel-gateway.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+
+  service:
+    pipelines:
+      logs:
+        receivers: [filelog]
+        processors: [memory_limiter, k8sattributes, batch]
+        exporters: [otlp/gateway]
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, batch]
+        exporters: [otlp/gateway]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, batch]
+        exporters: [otlp/gateway]

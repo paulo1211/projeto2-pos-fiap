@@ -13,7 +13,9 @@ gitops/
 │   ├── targeting-service/  # deployment + service
 │   ├── evaluation-service/ # deployment + service + hpa
 │   └── analytics-service/  # deployment + service + keda scaledobject
-└── argocd-apps/          # as 6 Applications do ArgoCD (base + 5 serviços)
+├── observability/        # Fase 4: namespace, dashboards e values dos charts (ver observability/README.md)
+└── argocd-apps/          # Applications do ArgoCD: base + 5 serviços (00-05)
+                          # e stack de observabilidade (10-14)
 ```
 
 ## Como a tag da imagem chega aqui
