@@ -1,0 +1,131 @@
+# OTel Collector — GATEWAY (Deployment)
+#
+# Peça central da telemetria: recebe OTLP (métricas, logs e traces) dos
+# microsserviços e do otel-agent, processa e roteia para cada backend:
+#
+#   métricas -> Prometheus (remote-write)
+#   logs     -> Loki (OTLP nativo)
+#   traces   -> New Relic (APM)  [adicionado na Etapa 2]
+#            -> connector spanmetrics -> métricas RED (rate/erros/latência)
+#
+# O spanmetrics gera métricas padronizadas a partir dos traces, iguais para
+# Go e Python (independente da versão de semconv de cada SDK): é delas que
+# saem os painéis de taxa de requisições/erros/latência do Grafana e o
+# alerta de 5xx.
+
+mode: deployment
+fullnameOverride: otel-gateway
+replicaCount: 1
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+presets:
+  # Enriquece a telemetria com k8s.namespace.name, k8s.pod.name,
+  # k8s.deployment.name etc. (cria o ClusterRole necessário).
+  kubernetesAttributes:
+    enabled: true
+
+# Scrape direto das métricas internas; funciona também para o DaemonSet.
+podMonitor:
+  enabled: true
+  metricsEndpoints:
+    - port: metrics
+      interval: 15s
+
+ports:
+  metrics:
+    enabled: true
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+
+  processors:
+    # Preserva service.name informado pelo SDK; fallback para stdout/filelog.
+    transform/service:
+      error_mode: ignore
+      log_statements:
+        - context: resource
+          statements:
+            - set(attributes["service.name"], attributes["k8s.deployment.name"]) where attributes["service.name"] == nil and attributes["k8s.deployment.name"] != nil
+            - set(attributes["service.name"], attributes["k8s.statefulset.name"]) where attributes["service.name"] == nil and attributes["k8s.statefulset.name"] != nil
+            - set(attributes["service.name"], attributes["k8s.daemonset.name"]) where attributes["service.name"] == nil and attributes["k8s.daemonset.name"] != nil
+            - set(attributes["service.name"], attributes["k8s.job.name"]) where attributes["service.name"] == nil and attributes["k8s.job.name"] != nil
+            - set(attributes["service.name"], attributes["k8s.container.name"]) where attributes["service.name"] == nil and attributes["k8s.container.name"] != nil
+    transform/http:
+      error_mode: ignore
+      trace_statements:
+        - context: span
+          statements:
+            - set(attributes["http.response.status_code"], attributes["http.status_code"]) where attributes["http.response.status_code"] == nil and attributes["http.status_code"] != nil
+            - set(attributes["http.request.method"], attributes["http.method"]) where attributes["http.request.method"] == nil and attributes["http.method"] != nil
+    # Promove apenas identidade útil às consultas, sem copiar todos os
+    # atributos de recurso (processo, SDK etc.) para cada série.
+    # Pod distingue réplicas que exportam contadores independentes.
+    transform/metric_labels:
+      error_mode: ignore
+      metric_statements:
+        - context: datapoint
+          statements:
+            - set(attributes["service.name"], resource.attributes["service.name"]) where attributes["service.name"] == nil and resource.attributes["service.name"] != nil
+            - set(attributes["k8s.namespace.name"], resource.attributes["k8s.namespace.name"]) where resource.attributes["k8s.namespace.name"] != nil
+            - set(attributes["k8s.pod.name"], resource.attributes["k8s.pod.name"]) where resource.attributes["k8s.pod.name"] != nil
+    batch:
+      send_batch_size: 1024
+      timeout: 5s
+
+  connectors:
+    spanmetrics:
+      namespace: traces.span.metrics
+      metrics_flush_interval: 15s
+      histogram:
+        unit: ms
+        explicit:
+          buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2500ms, 5s]
+      # Convenção única, normalizada por transform/http antes do connector.
+      dimensions:
+        - name: http.request.method
+        - name: http.response.status_code
+        - name: http.route
+
+  exporters:
+    debug: null
+    prometheusremotewrite:
+      endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write
+      resource_to_telemetry_conversion:
+        enabled: false
+    otlphttp/loki:
+      endpoint: http://loki.observability.svc.cluster.local:3100/otlp
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, transform/http, batch]
+        exporters: [spanmetrics]
+      metrics:
+        receivers: [otlp, spanmetrics]
+        processors: [memory_limiter, k8sattributes, transform/metric_labels, batch]
+        exporters: [prometheusremotewrite]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, k8sattributes, transform/service, batch]
+        exporters: [otlphttp/loki]
