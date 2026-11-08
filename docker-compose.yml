@@ -6,6 +6,7 @@ services:
     ports:
       - "8005:8005"
     environment:
+      - OTEL_SDK_DISABLED=true  # sem OTel Collector no ambiente local
       - PORT=8005
       - AWS_SQS_URL=http://sqs-local:9324/000000000000/auth-analytics
       - AWS_DYNAMODB_TABLE=ToggleMasterAnalytics
@@ -19,6 +20,7 @@ services:
     image: auth-service:0.1
     restart: always
     environment:
+      - OTEL_SDK_DISABLED=true  # sem OTel Collector no ambiente local
       - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/auth_db?sslmode=disable&target_session_attrs=read-write
       - PORT=8001
       - MASTER_KEY=supersecretkey
@@ -35,6 +37,7 @@ services:
     ports:
       - "8004:8004"
     environment:
+      - OTEL_SDK_DISABLED=true  # sem OTel Collector no ambiente local
       - PORT=8004
       - REDIS_URL=redis://redis:6379
       - FLAG_SERVICE_URL=http://flag-service:8002
@@ -56,6 +59,7 @@ services:
     image: flag-service:0.1
     restart: always
     environment:
+      - OTEL_SDK_DISABLED=true  # sem OTel Collector no ambiente local
       - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/flags_db?target_session_attrs=read-write
       - PORT=8002
       - AUTH_SERVICE_URL=http://auth-service:8001
@@ -70,6 +74,7 @@ services:
     image: targeting-service:0.1
     restart: always
     environment:
+      - OTEL_SDK_DISABLED=true  # sem OTel Collector no ambiente local
       - DATABASE_URL=postgres://postgres:postgres-secret@172.19.0.100:5432,172.19.0.101:5432/targeting_db?target_session_attrs=read-write
       - PORT=8003
       - AUTH_SERVICE_URL=http://auth-service:8001

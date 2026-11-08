@@ -12,7 +12,8 @@ on:
       go_version:
         required: false
         type: string
-        default: "1.21"
+        # OpenTelemetry Go v1.32 exige Go >= 1.22 (ver go.mod dos serviços).
+        default: "1.22"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true

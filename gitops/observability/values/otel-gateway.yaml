@@ -5,7 +5,7 @@
 #
 #   métricas -> Prometheus (remote-write)
 #   logs     -> Loki (OTLP nativo)
-#   traces   -> New Relic (APM)  [adicionado na Etapa 2]
+#   traces   -> New Relic (APM, OTLP/HTTP)
 #            -> connector spanmetrics -> métricas RED (rate/erros/latência)
 #
 # O spanmetrics gera métricas padronizadas a partir dos traces, iguais para
@@ -16,6 +16,18 @@
 mode: deployment
 fullnameOverride: otel-gateway
 replicaCount: 1
+
+# License Key do New Relic (Secret criado por
+# terraform/scripts/sync-observability-secrets.sh, nunca versionado).
+# optional: sem o Secret o gateway sobe mesmo assim (métricas e logs seguem
+# para Prometheus/Loki); só o envio ao New Relic falha com 403.
+extraEnvs:
+  - name: NEW_RELIC_LICENSE_KEY
+    valueFrom:
+      secretKeyRef:
+        name: newrelic-license
+        key: license-key
+        optional: true
 
 image:
   repository: otel/opentelemetry-collector-contrib
@@ -114,13 +126,26 @@ config:
         enabled: false
     otlphttp/loki:
       endpoint: http://loki.observability.svc.cluster.local:3100/otlp
+    # New Relic APM: endpoint OTLP nativo (conta na região US; para conta na
+    # região EU use https://otlp.eu01.nr-data.net). Traces -> Distributed
+    # Tracing e Service Map dos 5 serviços.
+    otlphttp/newrelic:
+      endpoint: https://otlp.nr-data.net
+      headers:
+        api-key: ${env:NEW_RELIC_LICENSE_KEY}
+      compression: gzip
+      retry_on_failure:
+        enabled: true
+      sending_queue:
+        enabled: true
+        queue_size: 1000
 
   service:
     pipelines:
       traces:
         receivers: [otlp]
         processors: [memory_limiter, k8sattributes, transform/http, batch]
-        exporters: [spanmetrics]
+        exporters: [spanmetrics, otlphttp/newrelic]
       metrics:
         receivers: [otlp, spanmetrics]
         processors: [memory_limiter, k8sattributes, transform/metric_labels, batch]
