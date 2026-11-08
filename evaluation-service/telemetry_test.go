@@ -122,4 +122,14 @@ func TestInstrumentHandlerSkipsHealth(t *testing.T) {
 		}
 		t.Fatalf("spans = %v, esperado só [GET /evaluate]", names)
 	}
+	// http.route vem do padrão do ServeMux e é dimensão do spanmetrics.
+	var route string
+	for _, kv := range ended[0].Attributes() {
+		if kv.Key == "http.route" {
+			route = kv.Value.AsString()
+		}
+	}
+	if route != "/evaluate" {
+		t.Fatalf("http.route = %q, esperado /evaluate", route)
+	}
 }

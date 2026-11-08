@@ -95,6 +95,11 @@ func setupTelemetry(ctx context.Context, defaultServiceName string) (func(contex
 // traceparent recebido) e ignora o /health das probes do Kubernetes.
 func instrumentHandler(h http.Handler, operation string) http.Handler {
 	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// http.route (dimensão do spanmetrics) vem do padrão do ServeMux; o
+		// otelhttp não o obtém sozinho porque o mux recebe uma cópia do request.
+		if pattern := routePattern(h, r); pattern != "" {
+			trace.SpanFromContext(r.Context()).SetAttributes(attribute.String("http.route", pattern))
+		}
 		h.ServeHTTP(w, r)
 		if r.URL.Path != "/health" {
 			logWithTrace(r.Context(), "HTTP %s concluído", operation)
@@ -104,15 +109,22 @@ func instrumentHandler(h http.Handler, operation string) http.Handler {
 		otelhttp.WithFilter(func(r *http.Request) bool { return r.URL.Path != "/health" }),
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			// Mux.Handler fornece o padrão, sem valores arbitrários de URL.
-			if mux, ok := h.(*http.ServeMux); ok {
-				_, pattern := mux.Handler(r)
-				if pattern != "" {
-					return r.Method + " " + pattern
-				}
+			if pattern := routePattern(h, r); pattern != "" {
+				return r.Method + " " + pattern
 			}
 			return r.Method
 		}),
 	)
+}
+
+// routePattern devolve o padrão registrado no ServeMux (sem valores
+// arbitrários da URL), ou "" quando não há rota.
+func routePattern(h http.Handler, r *http.Request) string {
+	if mux, ok := h.(*http.ServeMux); ok {
+		_, pattern := mux.Handler(r)
+		return pattern
+	}
+	return ""
 }
 
 // logWithTrace mantém o formato de correlação também em goroutines derivadas.

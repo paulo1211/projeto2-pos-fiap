@@ -13,7 +13,6 @@ import (
 
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/joho/godotenv"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // App struct (para injeção de dependência)
@@ -68,13 +67,12 @@ func main() {
 	mux.HandleFunc("/health", app.healthHandler)
 
 	// Endpoint público para validar uma chave
-	// (WithRouteTag preenche http.route, usado nas métricas por rota)
-	mux.Handle("/validate", otelhttp.WithRouteTag("/validate", http.HandlerFunc(app.validateKeyHandler)))
+	// (o otelhttp preenche http.route a partir do padrão do ServeMux)
+	mux.HandleFunc("/validate", app.validateKeyHandler)
 
 	// Endpoints de "admin" para criar/gerenciar chaves
 	// Eles são protegidos pelo middleware de autenticação
-	mux.Handle("/admin/keys", otelhttp.WithRouteTag("/admin/keys",
-		app.masterKeyAuthMiddleware(http.HandlerFunc(app.createKeyHandler))))
+	mux.Handle("/admin/keys", app.masterKeyAuthMiddleware(http.HandlerFunc(app.createKeyHandler)))
 
 	server := &http.Server{
 		Addr:              ":" + port,
