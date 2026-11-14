@@ -19,22 +19,23 @@ output "cluster_security_group_id" {
   value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
 }
 
+# Os quatro abaixo são null no modo Academy (use_lab_role = true), sem IRSA.
 output "oidc_provider_arn" {
-  value = aws_iam_openid_connect_provider.eks.arn
+  value = one(aws_iam_openid_connect_provider.eks[*].arn)
 }
 
 output "oidc_provider_url" {
-  value = aws_iam_openid_connect_provider.eks.url
+  value = one(aws_iam_openid_connect_provider.eks[*].url)
 }
 
 output "workload_irsa_role_name" {
-  value = aws_iam_role.workload_irsa.name
+  value = one(aws_iam_role.workload_irsa[*].name)
 }
 
 output "workload_irsa_role_arn" {
-  value = aws_iam_role.workload_irsa.arn
+  value = one(aws_iam_role.workload_irsa[*].arn)
 }
 
 output "node_role_arn" {
-  value = aws_iam_role.node.arn
+  value = local.node_role_arn
 }

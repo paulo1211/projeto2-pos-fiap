@@ -17,7 +17,7 @@ spec:
   triggers:
     - type: aws-sqs-queue
       metadata:
-        queueURL: "https://sqs.us-east-1.amazonaws.com/775419744057/evaluation-analytics"
+        queueURL: "https://sqs.us-east-1.amazonaws.com/654654158732/evaluation-analytics"
         queueLength: "5"
         awsRegion: "us-east-1"
         identityOwner: operator

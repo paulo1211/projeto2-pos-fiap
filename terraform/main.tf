@@ -21,6 +21,8 @@ module "eks" {
   node_desired_size   = var.node_desired_size
   node_min_size       = var.node_min_size
   node_max_size       = var.node_max_size
+  use_lab_role        = var.use_lab_role
+  lab_role_name       = var.lab_role_name
   tags                = local.common_tags
 }
 
@@ -81,7 +83,8 @@ module "argocd" {
 module "keda" {
   source = "./modules/keda"
 
-  operator_role_arn = aws_iam_role.keda_operator_irsa.arn
+  # Modo Academy: sem IRSA, o operator usa a LabRole do nó (IMDS).
+  operator_role_arn = var.use_lab_role ? "" : one(aws_iam_role.keda_operator_irsa[*].arn)
 
   depends_on = [module.eks]
 }
@@ -90,7 +93,8 @@ module "keda" {
 # its GetQueueAttributes calls from the operator pod itself, so the operator
 # (not the scaled workload) needs its own AWS identity.
 resource "aws_iam_role" "keda_operator_irsa" {
-  name = "${var.project_name}-keda-operator-irsa-role"
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-keda-operator-irsa-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -113,8 +117,9 @@ resource "aws_iam_role" "keda_operator_irsa" {
 }
 
 resource "aws_iam_role_policy" "keda_operator_permissions" {
-  name = "${var.project_name}-keda-operator-permissions"
-  role = aws_iam_role.keda_operator_irsa.name
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-keda-operator-permissions"
+  role  = aws_iam_role.keda_operator_irsa[0].name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -133,9 +138,11 @@ resource "aws_iam_role_policy" "keda_operator_permissions" {
 # terraform/modules/eks) just enough access to SQS + DynamoDB, replacing the
 # long-lived AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY env vars from Phase 2.
 
+# Modo Academy: não criada; a LabRole já tem acesso a SQS e DynamoDB.
 resource "aws_iam_role_policy" "workload_permissions" {
-  name = "${var.project_name}-workload-permissions"
-  role = module.eks.workload_irsa_role_name
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-workload-permissions"
+  role  = module.eks.workload_irsa_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"

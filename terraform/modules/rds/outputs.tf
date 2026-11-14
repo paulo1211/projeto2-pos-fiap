@@ -1,6 +1,8 @@
 output "endpoints" {
   description = "Map of db key -> host:port"
-  value       = { for k, v in aws_db_instance.this : k => "${v.address}:${v.port}" }
+  # Ignora instâncias ainda sem endereço (criação interrompida ou import em
+  # andamento); o próximo refresh preenche os valores.
+  value = { for k, v in aws_db_instance.this : k => "${v.address}:${v.port}" if v.address != null && v.port != null }
 }
 
 output "secret_arns" {

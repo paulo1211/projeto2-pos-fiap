@@ -4,6 +4,21 @@ variable "project_name" {
   default     = "togglemaster"
 }
 
+variable "use_lab_role" {
+  # AWS Academy (Learner Lab) bloqueia a criação de roles, policies e
+  # provedores OIDC. true: cluster, nós e pods usam a LabRole existente (sem
+  # IRSA). false: conta AWS comum, com roles dedicadas e IRSA.
+  description = "true para AWS Academy (usa a LabRole); false para conta AWS comum (roles próprias + IRSA)."
+  type        = bool
+  default     = true
+}
+
+variable "lab_role_name" {
+  description = "Role pré-criada pelo AWS Academy, usada quando use_lab_role = true."
+  type        = string
+  default     = "LabRole"
+}
+
 variable "aws_region" {
   type    = string
   default = "us-east-1"

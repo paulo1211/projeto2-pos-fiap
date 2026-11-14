@@ -18,6 +18,10 @@ on:
         required: true
       AWS_SECRET_ACCESS_KEY:
         required: true
+      # AWS Academy só emite credenciais temporárias: o token é obrigatório
+      # lá e expira com a sessão do lab (atualize os 3 secrets a cada sessão).
+      AWS_SESSION_TOKEN:
+        required: false
       AWS_REGION:
         required: true
 
@@ -138,6 +142,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR

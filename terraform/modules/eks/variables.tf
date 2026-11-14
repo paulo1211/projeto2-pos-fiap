@@ -54,6 +54,18 @@ variable "node_ami_type" {
   default     = "AL2023_x86_64_STANDARD"
 }
 
+variable "use_lab_role" {
+  description = "AWS Academy: usa a LabRole existente em vez de criar roles/OIDC (IAM bloqueado no Learner Lab)."
+  type        = bool
+  default     = true
+}
+
+variable "lab_role_name" {
+  description = "Nome da role pré-criada pelo AWS Academy, usada pelo cluster e pelos nós quando use_lab_role = true."
+  type        = string
+  default     = "LabRole"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

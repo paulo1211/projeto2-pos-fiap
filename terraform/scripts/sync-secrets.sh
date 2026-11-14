@@ -23,6 +23,13 @@ TARGETING_DB_URL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --
 
 REDIS_HOST=$(terraform output -raw redis_primary_endpoint)
 SQS_URL=$(terraform output -raw sqs_queue_url)
+# O namespace é gerenciado pelo ArgoCD (gitops/base/namespace.yaml), mas este
+# script roda antes do bootstrap das Applications; cria com os mesmos labels
+# se ainda não existir (o ArgoCD adota o recurso depois).
+kubectl create namespace togglemaster --dry-run=client -o yaml \
+  | kubectl label --local -f - --dry-run=client -o yaml \
+      app.kubernetes.io/name=togglemaster app.kubernetes.io/part-of=togglemaster-ecosystem \
+  | kubectl apply -f -
 # --ignore-not-found tolera apenas ausência; erros de acesso/conexão abortam.
 EXISTING_SECRET=$(kubectl get secret togglemaster-secrets -n togglemaster --ignore-not-found -o json)
 preserve_or_generate_key() {

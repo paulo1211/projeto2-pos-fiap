@@ -1,11 +1,26 @@
+# --- Modo AWS Academy (use_lab_role = true) --------------------------------
+# O Learner Lab não permite criar roles, policies nem provedores OIDC no IAM.
+# Nesse modo o cluster e os nós usam a LabRole já existente na conta e não há
+# IRSA: os pods obtêm credenciais da LabRole pelo IMDS do nó (hop limit 2).
+# O ARN é montado a partir do ID da conta (sts:GetCallerIdentity) para não
+# depender de iam:GetRole.
+
+locals {
+  lab_role_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.lab_role_name}"
+  cluster_role_arn = var.use_lab_role ? local.lab_role_arn : one(aws_iam_role.cluster[*].arn)
+  node_role_arn    = var.use_lab_role ? local.lab_role_arn : one(aws_iam_role.node[*].arn)
+}
+
 data "tls_certificate" "eks_oidc" {
-  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  count = var.use_lab_role ? 0 : 1
+  url   = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
 resource "aws_iam_openid_connect_provider" "eks" {
+  count           = var.use_lab_role ? 0 : 1
   url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
+  thumbprint_list = [data.tls_certificate.eks_oidc[0].certificates[0].sha1_fingerprint]
 
   tags = var.tags
 }
@@ -13,7 +28,8 @@ resource "aws_iam_openid_connect_provider" "eks" {
 # --- Cluster IAM role ---------------------------------------------------
 
 resource "aws_iam_role" "cluster" {
-  name = "${var.project_name}-eks-cluster-role"
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -28,14 +44,16 @@ resource "aws_iam_role" "cluster" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_policy" {
-  role       = aws_iam_role.cluster.name
+  count      = var.use_lab_role ? 0 : 1
+  role       = aws_iam_role.cluster[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
 # --- Node group IAM role -------------------------------------------------
 
 resource "aws_iam_role" "node" {
-  name = "${var.project_name}-eks-node-role"
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-eks-node-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -50,17 +68,20 @@ resource "aws_iam_role" "node" {
 }
 
 resource "aws_iam_role_policy_attachment" "node_worker" {
-  role       = aws_iam_role.node.name
+  count      = var.use_lab_role ? 0 : 1
+  role       = aws_iam_role.node[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "node_cni" {
-  role       = aws_iam_role.node.name
+  count      = var.use_lab_role ? 0 : 1
+  role       = aws_iam_role.node[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 resource "aws_iam_role_policy_attachment" "node_ecr" {
-  role       = aws_iam_role.node.name
+  count      = var.use_lab_role ? 0 : 1
+  role       = aws_iam_role.node[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
@@ -68,7 +89,7 @@ resource "aws_iam_role_policy_attachment" "node_ecr" {
 
 resource "aws_eks_cluster" "this" {
   name     = "${var.project_name}-eks"
-  role_arn = aws_iam_role.cluster.arn
+  role_arn = local.cluster_role_arn
   version  = var.cluster_version
 
   vpc_config {
@@ -89,7 +110,7 @@ resource "aws_eks_cluster" "this" {
 resource "aws_eks_node_group" "default" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.project_name}-default-ng"
-  node_role_arn   = aws_iam_role.node.arn
+  node_role_arn   = local.node_role_arn
   subnet_ids      = var.private_subnet_ids
 
   instance_types = var.node_instance_types
@@ -106,6 +127,16 @@ resource "aws_eks_node_group" "default" {
     max_unavailable = 1
   }
 
+  # Modo Academy: sem IRSA, os pods alcançam a LabRole pelo IMDS do nó, o que
+  # exige hop limit 2 (o salto extra é a rede do pod).
+  dynamic "launch_template" {
+    for_each = var.use_lab_role ? [1] : []
+    content {
+      id      = aws_launch_template.nodes[0].id
+      version = aws_launch_template.nodes[0].latest_version
+    }
+  }
+
   tags = var.tags
 
   depends_on = [
@@ -113,6 +144,24 @@ resource "aws_eks_node_group" "default" {
     aws_iam_role_policy_attachment.node_cni,
     aws_iam_role_policy_attachment.node_ecr,
   ]
+}
+
+resource "aws_launch_template" "nodes" {
+  count       = var.use_lab_role ? 1 : 0
+  name_prefix = "${var.project_name}-ng-"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = var.tags
+  }
+
+  tags = var.tags
 }
 
 # --- IRSA role for the workloads that talk to SQS/DynamoDB -----------------
@@ -143,6 +192,11 @@ locals {
 # EKS Access Entry, instead of relying on the implicit "cluster creator gets
 # system:masters" bootstrap behavior — which only sticks to the exact
 # identity/session that made the original CreateCluster call.
+#
+# Vale também no modo Academy: o cluster é criado sem o bootstrap do criador
+# (bootstrap_cluster_creator_admin_permissions não definido), então sem esta
+# entry nem a role voclabs acessa o Kubernetes. A ARN normalizada
+# (role/voclabs) continua valendo em todas as sessões do lab.
 resource "aws_eks_access_entry" "admin" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = local.admin_principal_arn
@@ -152,8 +206,10 @@ resource "aws_eks_access_entry" "admin" {
 }
 
 resource "aws_eks_access_policy_association" "admin" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = local.admin_principal_arn
+  cluster_name = aws_eks_cluster.this.name
+  # Referência à entry (e não ao local) para só associar depois que ela existir;
+  # em paralelo a API responde 404 ResourceNotFoundException.
+  principal_arn = aws_eks_access_entry.admin.principal_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
@@ -162,20 +218,21 @@ resource "aws_eks_access_policy_association" "admin" {
 }
 
 resource "aws_iam_role" "workload_irsa" {
-  name = "${var.project_name}-workload-irsa-role"
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-workload-irsa-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = aws_iam_openid_connect_provider.eks.arn
+        Federated = aws_iam_openid_connect_provider.eks[0].arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:togglemaster:togglemaster-workload"
-          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud" = "sts.amazonaws.com"
+          "${replace(aws_iam_openid_connect_provider.eks[0].url, "https://", "")}:sub" = "system:serviceaccount:togglemaster:togglemaster-workload"
+          "${replace(aws_iam_openid_connect_provider.eks[0].url, "https://", "")}:aud" = "sts.amazonaws.com"
         }
       }
     }]

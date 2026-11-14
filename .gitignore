@@ -24,3 +24,9 @@ terraform.rc
 __pycache__/
 
 .pytest_cache/
+
+# Credenciais temporárias do AWS Academy (scripts/academy-session.sh)
+.academy/
+# Planos salvos (terraform plan -out) contêm valores sensíveis
+tfplan
+*.tfplan
