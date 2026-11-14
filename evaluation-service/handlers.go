@@ -29,6 +29,10 @@ func (a *App) evaluationHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "user_id e flag_name são obrigatórios"}`, http.StatusBadRequest)
 		return
 	}
+	if !validFlagName(flagName) {
+		http.Error(w, `{"error": "flag_name inválido: use letras, números, '.', '_' ou '-' (até 128)"}`, http.StatusBadRequest)
+		return
+	}
 
 	// 2. Obter a decisão (lógica de cache/serviço está em evaluator.go)
 	result, err := a.getDecision(r.Context(), userID, flagName)

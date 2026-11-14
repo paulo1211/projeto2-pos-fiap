@@ -2,6 +2,10 @@
 # module defaults; you only need to override what's different for your
 # account/region.
 
+# AWS Academy (Learner Lab): true usa a LabRole (sem criar IAM/IRSA).
+# Conta AWS comum: false.
+# use_lab_role = true
+
 # project_name = "togglemaster"
 # aws_region   = "us-east-1"
 # azs          = ["us-east-1a", "us-east-1b"]

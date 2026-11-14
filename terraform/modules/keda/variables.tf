@@ -10,6 +10,7 @@ variable "chart_version" {
 }
 
 variable "operator_role_arn" {
-  description = "IRSA role ARN annotated onto the keda-operator ServiceAccount so scalers (e.g. aws-sqs-queue) can authenticate to AWS without relying on the target workload's pod identity."
+  description = "IRSA role ARN annotated onto the keda-operator ServiceAccount so scalers (e.g. aws-sqs-queue) can authenticate to AWS without relying on the target workload's pod identity. Vazio (modo Academy): sem annotation, o operator usa a role do nó."
   type        = string
+  default     = ""
 }

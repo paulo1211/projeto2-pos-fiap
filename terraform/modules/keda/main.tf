@@ -13,8 +13,11 @@ resource "helm_release" "keda" {
 
   create_namespace = false
 
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.operator_role_arn
+  dynamic "set" {
+    for_each = var.operator_role_arn == "" ? [] : [var.operator_role_arn]
+    content {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = set.value
+    }
   }
 }

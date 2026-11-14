@@ -11,5 +11,8 @@ kind: ServiceAccount
 metadata:
   name: togglemaster-workload
   namespace: togglemaster
-  annotations:
-    eks.amazonaws.com/role-arn: "arn:aws:iam::775419744057:role/togglemaster-workload-irsa-role"
+  # AWS Academy (use_lab_role = true no Terraform): sem IRSA, os pods usam a
+  # LabRole do nó via IMDS, então a ServiceAccount fica sem annotation.
+  # Em conta AWS comum (use_lab_role = false), adicione:
+  #   annotations:
+  #     eks.amazonaws.com/role-arn: "arn:aws:iam::<ACCOUNT_ID>:role/togglemaster-workload-irsa-role"
