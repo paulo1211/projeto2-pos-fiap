@@ -1,11 +1,42 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"strings"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var tracer = otel.Tracer("auth-service")
+
+// startDBSpan cria um span CLIENT para uma operação no PostgreSQL. O pgx v4
+// (database/sql) não tem instrumentação OTel oficial, então o span é manual.
+func startDBSpan(ctx context.Context, operation, table string) (context.Context, trace.Span) {
+	return tracer.Start(ctx, operation+" "+table,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+			attribute.String("db.operation", operation),
+			attribute.String("db.sql.table", table),
+		),
+	)
+}
+
+// endDBSpan registra erro no span (sql.ErrNoRows não é falha da operação).
+func endDBSpan(span trace.Span, err error) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+}
 
 // Estrutura para o corpo da requisição de criação de chave
 type CreateKeyRequest struct {
@@ -41,11 +72,20 @@ func (a *App) validateKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Verifica se o hash existe no banco de dados
 	var id int
-	err := a.DB.QueryRow("SELECT id FROM api_keys WHERE key_hash = $1 AND is_active = true", keyHash).Scan(&id)
-	if err != nil {
-		// Se não encontrar (sql.ErrNoRows), ou qualquer outro erro, a chave é inválida
-		log.Printf("Falha na validação da chave (hash: %s...): %v", keyHash[:6], err)
+	ctx, span := startDBSpan(r.Context(), "SELECT", "api_keys")
+	err := a.DB.QueryRowContext(ctx, "SELECT id FROM api_keys WHERE key_hash = $1 AND is_active = true", keyHash).Scan(&id)
+	endDBSpan(span, err)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Hash não encontrado (ou chave inativa): a chave é inválida
+		logWithTrace(r.Context(), "Falha na validação da chave (hash: %s...): %v", keyHash[:6], err)
 		http.Error(w, "Chave de API inválida ou inativa", http.StatusUnauthorized)
+		return
+	}
+	if err != nil {
+		// Falha de infraestrutura (ex.: banco indisponível) não é "chave
+		// inválida": responde 5xx para aparecer nos traces e no alerta.
+		logWithTrace(r.Context(), "Erro ao consultar o banco na validação da chave: %v", err)
+		http.Error(w, "Serviço de autenticação indisponível", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -82,18 +122,20 @@ func (a *App) createKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Salva o hash no banco de dados
 	var newID int
-	err = a.DB.QueryRow(
+	ctx, span := startDBSpan(r.Context(), "INSERT", "api_keys")
+	err = a.DB.QueryRowContext(ctx,
 		"INSERT INTO api_keys (name, key_hash) VALUES ($1, $2) RETURNING id",
 		req.Name, newKeyHash,
 	).Scan(&newID)
+	endDBSpan(span, err)
 
 	if err != nil {
-		log.Printf("Erro ao salvar a chave no banco: %v", err)
+		logWithTrace(r.Context(), "Erro ao salvar a chave no banco: %v", err)
 		http.Error(w, "Erro ao salvar a chave", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Nova chave criada com sucesso (ID: %d, Name: %s)", newID, req.Name)
+	logWithTrace(r.Context(), "Nova chave criada com sucesso (ID: %d, Name: %s)", newID, req.Name)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(CreateKeyResponse{
 		Name:    req.Name,

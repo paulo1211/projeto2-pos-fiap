@@ -12,7 +12,9 @@ on:
       go_version:
         required: false
         type: string
-        default: "1.21"
+        # Deve acompanhar a diretiva "go" do go.mod dos serviços (1.26:
+        # OpenTelemetry Go v1.47 e gRPC v1.85, sem CVEs CRITICAL no Trivy).
+        default: "1.26"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true

@@ -16,6 +16,7 @@ spec:
       labels:
         app: flag-service
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
         - name: flag-service
           image: 775419744057.dkr.ecr.us-east-1.amazonaws.com/flag-service:v1.0.0-6ef5416
@@ -24,6 +25,29 @@ spec:
             - containerPort: 8002
               name: http
           env:
+            # --- OpenTelemetry ---
+            # service.name igual ao Deployment: é o nome no New Relic, no
+            # Service Map e no label service_name das métricas/logs.
+            - name: OTEL_SERVICE_NAME
+              value: flag-service
+            # k8s.pod.ip permite ao k8sattributes do gateway associar a
+            # telemetria ao pod (namespace, deployment, nó) com segurança.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.ip=$(POD_IP),deployment.environment=eks
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: OTEL_EXPORTER_OTLP_PROTOCOL
             - name: PORT
               valueFrom:
                 configMapKeyRef:

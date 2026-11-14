@@ -23,8 +23,21 @@ TARGETING_DB_URL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --
 
 REDIS_HOST=$(terraform output -raw redis_primary_endpoint)
 SQS_URL=$(terraform output -raw sqs_queue_url)
-MASTER_KEY=$(openssl rand -hex 32)
-SERVICE_API_KEY=$(openssl rand -hex 32)
+# --ignore-not-found tolera apenas ausência; erros de acesso/conexão abortam.
+EXISTING_SECRET=$(kubectl get secret togglemaster-secrets -n togglemaster --ignore-not-found -o json)
+preserve_or_generate_key() {
+  local key_name="$1" encoded_value
+  if [[ "${ROTATE_APP_KEYS:-false}" != "true" && -n "$EXISTING_SECRET" ]]; then
+    encoded_value=$(jq -r --arg key "$key_name" '.data[$key] // empty' <<< "$EXISTING_SECRET")
+    if [[ -n "$encoded_value" ]]; then
+      printf '%s' "$encoded_value" | base64 -d
+      return
+    fi
+  fi
+  openssl rand -hex 32
+}
+MASTER_KEY=$(preserve_or_generate_key MASTER_KEY)
+SERVICE_API_KEY=$(preserve_or_generate_key SERVICE_API_KEY)
 
 kubectl create secret generic togglemaster-secrets \
   --namespace togglemaster \
@@ -38,3 +51,7 @@ kubectl create secret generic togglemaster-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Secret togglemaster-secrets applied to namespace togglemaster."
+
+if [[ "${ROTATE_APP_KEYS:-false}" == "true" ]]; then
+  echo "Chaves rotacionadas. Atualize os consumidores e reinicie os deployments via procedimento coordenado."
+fi

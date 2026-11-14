@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Recursos "nossos" da stack de observabilidade (os charts Helm ficam nas
+# Applications 11-14 em gitops/argocd-apps/). A pasta values/ não entra aqui:
+# é lida pelas Applications Helm via multi-source ($values).
+namespace: observability
+
+resources:
+  - namespace.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Dashboards do Grafana: o sidecar do Grafana carrega qualquer ConfigMap com
+# o label grafana_dashboard=1.
+configMapGenerator:
+  - name: grafana-dashboard-togglemaster
+    files:
+      - dashboards/togglemaster-overview.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: ToggleMaster

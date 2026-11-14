@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/joho/godotenv"
@@ -36,6 +41,15 @@ func main() {
 		log.Fatal("MASTER_KEY deve ser definida")
 	}
 
+	// --- OpenTelemetry ---
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	shutdownTelemetry, err := setupTelemetry(ctx, "auth-service")
+	if err != nil {
+		log.Fatalf("Não foi possível inicializar o OpenTelemetry: %v", err)
+	}
+
 	// --- Conexão com o Banco ---
 	db, err := connectDB(databaseURL)
 	if err != nil {
@@ -53,15 +67,41 @@ func main() {
 	mux.HandleFunc("/health", app.healthHandler)
 
 	// Endpoint público para validar uma chave
+	// (o otelhttp preenche http.route a partir do padrão do ServeMux)
 	mux.HandleFunc("/validate", app.validateKeyHandler)
 
 	// Endpoints de "admin" para criar/gerenciar chaves
 	// Eles são protegidos pelo middleware de autenticação
 	mux.Handle("/admin/keys", app.masterKeyAuthMiddleware(http.HandlerFunc(app.createKeyHandler)))
 
-	log.Printf("Serviço de Autenticação (Go) rodando na porta %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           instrumentHandler(mux, "auth-service"),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Printf("Serviço de Autenticação (Go) rodando na porta %s", port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	// Encerramento gracioso: termina as requisições em andamento e faz flush
+	// dos spans/métricas pendentes antes de o pod ser finalizado.
+	<-ctx.Done()
+	log.Println("Sinal de encerramento recebido, finalizando...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Erro ao encerrar o servidor HTTP: %v", err)
+		_ = server.Close()
+	}
+	cancel()
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFlush()
+	if err := shutdownTelemetry(flushCtx); err != nil {
+		log.Printf("Erro ao encerrar o OpenTelemetry: %v", err)
 	}
 }
 

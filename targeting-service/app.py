@@ -10,14 +10,22 @@ from dotenv import load_dotenv
 from functools import wraps
 import logging
 
-# Configura o logging
-logging.basicConfig(level=logging.INFO)
+# Carrega configuração local antes dos SDKs e clientes.
+load_dotenv()
+
+import telemetry
+
+# OpenTelemetry + logging com trace_id/span_id (antes de criar o pool,
+# para que as conexões do psycopg2 já nasçam instrumentadas).
+telemetry.setup_telemetry("targeting-service")
+telemetry.instrument_requests()
+telemetry.instrument_psycopg2()
 log = logging.getLogger(__name__)
 
-# Carrega .env para desenvolvimento local
-load_dotenv() 
+
 
 app = Flask(__name__)
+telemetry.instrument_flask(app)
 
 # --- Configuração ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -29,7 +37,9 @@ if not DATABASE_URL or not AUTH_SERVICE_URL:
 
 # --- Pool de Conexão com o Banco ---
 try:
-    pool = SimpleConnectionPool(1, 5, dsn=DATABASE_URL)
+    # cursor_factory na conexão (e não por chamada) para que o
+    # psycopg2 instrumentado gere spans das queries.
+    pool = SimpleConnectionPool(1, 5, dsn=DATABASE_URL, cursor_factory=RealDictCursor)
     log.info("Pool de conexões com o PostgreSQL (targeting) inicializado.")
 except psycopg2.OperationalError as e:
     log.critical(f"Erro fatal ao conectar ao PostgreSQL: {e}")
@@ -48,6 +58,10 @@ def require_auth(f):
             validate_url = f"{AUTH_SERVICE_URL}/validate"
             response = requests.get(validate_url, headers={"Authorization": auth_header}, timeout=3)
             
+            if response.status_code >= 500:
+                # Falha do auth-service (ex.: banco fora) não é chave inválida.
+                log.error(f"auth-service indisponível (status: {response.status_code})")
+                return jsonify({"error": "Serviço de autenticação indisponível"}), 503
             if response.status_code != 200:
                 log.warning(f"Falha na validação da chave (status: {response.status_code})")
                 return jsonify({"error": "Chave de API inválida"}), 401
@@ -84,7 +98,7 @@ def create_rule():
     cur = None
     try:
         conn = pool.getconn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(
             "INSERT INTO targeting_rules (flag_name, is_enabled, rules, created_at, updated_at) "
             "VALUES (%s, %s, %s, NOW(), NOW()) RETURNING *",
@@ -114,7 +128,7 @@ def get_rule(flag_name):
     cur = None
     try:
         conn = pool.getconn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM targeting_rules WHERE flag_name = %s", (flag_name,))
         rule = cur.fetchone()
         if not rule:
@@ -156,7 +170,7 @@ def update_rule(flag_name):
     cur = None
     try:
         conn = pool.getconn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, tuple(values))
         
         if cur.rowcount == 0:
