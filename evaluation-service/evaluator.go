@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -21,6 +23,32 @@ import (
 )
 
 var tracer = otel.Tracer("evaluation-service")
+
+// flagNamePattern limita flag_name (vindo da query string) a um único segmento
+// seguro de caminho: sem "/", "?", "#", "%", espaços ou nomes como "..". Assim o
+// valor não altera o caminho nem a query das chamadas ao flag-service e ao
+// targeting-service (CWE-918 / gosec G704).
+var flagNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+// ErrInvalidFlagName indica flag_name fora do padrão permitido.
+var ErrInvalidFlagName = errors.New("flag_name inválido")
+
+func validFlagName(name string) bool {
+	return flagNamePattern.MatchString(name)
+}
+
+// downstreamURL monta <base>/<resource>/<name> para um serviço interno, com o
+// host vindo só da configuração e o nome validado e escapado como segmento.
+func downstreamURL(base, resource, name string) (string, error) {
+	if !validFlagName(name) {
+		return "", ErrInvalidFlagName
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("URL de serviço inválida: %q", base)
+	}
+	return u.JoinPath(resource, url.PathEscape(name)).String(), nil
+}
 
 // startRedisSpan cria um span CLIENT para o cache. O go-redis v8 não tem
 // instrumentação compatível com a versão atual do OTel, então é manual.
@@ -139,12 +167,15 @@ func (a *App) fetchFromServices(ctx context.Context, flagName string) (*Combined
 
 // fetchFlag (função helper)
 func (a *App) fetchFlag(ctx context.Context, flagName string) (*Flag, error) {
-	url := fmt.Sprintf("%s/flags/%s", a.FlagServiceURL, flagName)
+	reqURL, err := downstreamURL(a.FlagServiceURL, "flags", flagName)
+	if err != nil {
+		return nil, err
+	}
 
 	apiKey := os.Getenv("SERVICE_API_KEY")
 	// Com o ctx da requisição, o transport do otelhttp encadeia o span CLIENT
 	// e propaga o traceparent para o serviço chamado.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao montar requisição: %w", err)
 	}
@@ -172,11 +203,14 @@ func (a *App) fetchFlag(ctx context.Context, flagName string) (*Flag, error) {
 }
 
 func (a *App) fetchRule(ctx context.Context, flagName string) (*TargetingRule, error) {
-	url := fmt.Sprintf("%s/rules/%s", a.TargetingServiceURL, flagName)
+	reqURL, err := downstreamURL(a.TargetingServiceURL, "rules", flagName)
+	if err != nil {
+		return nil, err
+	}
 	apiKey := os.Getenv("SERVICE_API_KEY") // Usa a mesma chave
 	// Com o ctx da requisição, o transport do otelhttp encadeia o span CLIENT
 	// e propaga o traceparent para o serviço chamado.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao montar requisição: %w", err)
 	}
