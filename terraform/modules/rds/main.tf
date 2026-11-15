@@ -67,7 +67,10 @@ resource "aws_secretsmanager_secret" "db_credentials" {
   for_each = var.databases
 
   name = "${var.project_name}/${each.key}/database-url"
-  tags = var.tags
+  # Exclusão imediata: com a janela padrão (30 dias) o nome fica reservado e o
+  # próximo apply falha com "already scheduled for deletion".
+  recovery_window_in_days = 0
+  tags                    = var.tags
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {
