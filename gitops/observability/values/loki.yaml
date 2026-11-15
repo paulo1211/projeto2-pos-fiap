@@ -34,6 +34,16 @@ singleBinary:
   # Sem EBS CSI driver no cluster: emptyDir (dados efêmeros, ok para demo).
   persistence:
     enabled: false
+  # Sem persistência o chart não monta nada em /var/loki (path_prefix) e o
+  # rootfs é read-only -> "mkdir /var/loki: read-only file system". Monta um
+  # emptyDir no lugar (os logs se perdem quando o pod é recriado).
+  extraVolumes:
+    - name: loki-data
+      emptyDir:
+        sizeLimit: 5Gi
+  extraVolumeMounts:
+    - name: loki-data
+      mountPath: /var/loki
   resources:
     requests:
       cpu: 100m

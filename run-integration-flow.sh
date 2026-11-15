@@ -39,12 +39,12 @@ extract_json_field() {
 }
 
 # Configuração de portas e chaves
-AUTH_URL="http://localhost:8001"
-FLAG_URL="http://localhost:8002"
-TARGETING_URL="http://localhost:8003"
-EVALUATION_URL="http://localhost:8004"
-ANALYTICS_URL="http://localhost:8005"
-MASTER_KEY="supersecretkey"
+AUTH_URL="${AUTH_URL:-http://localhost:8001}"
+FLAG_URL="${FLAG_URL:-http://localhost:8002}"
+TARGETING_URL="${TARGETING_URL:-http://localhost:8003}"
+EVALUATION_URL="${EVALUATION_URL:-http://localhost:8004}"
+ANALYTICS_URL="${ANALYTICS_URL:-http://localhost:8005}"
+MASTER_KEY="${MASTER_KEY:-supersecretkey}"
 
 echo -e "${BLUE}${BOLD}===================================================${NC}"
 echo -e "${BLUE}${BOLD}        TOGGLEMASTER - TESTADOR DE FLUXO           ${NC}"
@@ -58,8 +58,15 @@ SERVICES=(
     "flag-service (Python)|$FLAG_URL/health"
     "targeting-service (Python)|$TARGETING_URL/health"
     "evaluation-service (Go)|$EVALUATION_URL/health"
-    "analytics-service (Python)|$ANALYTICS_URL/health"
 )
+# No EKS o analytics-service escala para zero com KEDA (fila vazia = 0 pods) e
+# só sobe depois que este fluxo gera eventos no SQS. Use SKIP_ANALYTICS_HEALTH=true
+# para não exigir o health dele antes do teste.
+if [[ "${SKIP_ANALYTICS_HEALTH:-false}" == "true" ]]; then
+    log_warn "Health do analytics-service ignorado (SKIP_ANALYTICS_HEALTH=true; escala a partir de zero via KEDA)."
+else
+    SERVICES+=("analytics-service (Python)|$ANALYTICS_URL/health")
+fi
 
 unhealthy_count=0
 for svc in "${SERVICES[@]}"; do
