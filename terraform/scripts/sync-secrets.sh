@@ -62,3 +62,5 @@ echo "Secret togglemaster-secrets applied to namespace togglemaster."
 if [[ "${ROTATE_APP_KEYS:-false}" == "true" ]]; then
   echo "Chaves rotacionadas. Atualize os consumidores e reinicie os deployments via procedimento coordenado."
 fi
+
+echo "Próximo passo (RDS novo ou SERVICE_API_KEY rotacionada): ./scripts/init-databases.sh"
