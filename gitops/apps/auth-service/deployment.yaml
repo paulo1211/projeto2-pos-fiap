@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: auth-service
-          image: 654654158732.dkr.ecr.us-east-1.amazonaws.com/auth-service:v1.0.0-00b4c7c
+          image: 654654158732.dkr.ecr.us-east-1.amazonaws.com/auth-service:v1.0.0-ed9000a
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
