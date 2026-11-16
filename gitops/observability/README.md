@@ -70,7 +70,9 @@ Logs no Grafana → Explore → Loki, por exemplo:
   limite máximo, não uma garantia de histórico. Grafana também é efêmero;
   dashboards/datasources são restaurados pelo GitOps. PVCs requerem uma
   etapa de infraestrutura com storage driver, StorageClass e permissões.
-- Alertmanager desligado: os alertas são feitos no Grafana Alerting.
+- Alertmanager desligado: os alertas são feitos no Grafana Alerting
+  (regra, contact points e política em `alerting/`, carregados pelo sidecar
+  de alertas; self-healing em `../self-healing/README.md`).
 
 ## Bootstrap e validação da Etapa 1
 

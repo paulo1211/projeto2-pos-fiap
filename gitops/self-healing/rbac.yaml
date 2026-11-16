@@ -1,0 +1,34 @@
+# Permissão mínima: o ServiceAccount do runbook (namespace observability) só
+# pode ler e fazer patch (rollout restart) no deployment auth-service do
+# namespace togglemaster. Para cobrir outro serviço, inclua-o em resourceNames
+# E em ALLOWED_DEPLOYMENTS (deployment.yaml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: self-healing
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: self-healing-rollout-restart
+  namespace: togglemaster
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["auth-service"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: self-healing-rollout-restart
+  namespace: togglemaster
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: self-healing-rollout-restart
+subjects:
+  - kind: ServiceAccount
+    name: self-healing
+    namespace: observability

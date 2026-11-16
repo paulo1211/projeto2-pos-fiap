@@ -1,0 +1,19 @@
+# Política de notificação: alertas com team=togglemaster vão para o contact
+# point togglemaster-incident (PagerDuty + Discord + self-healing); o resto
+# segue para o contact point padrão.
+#   group_wait 10s: notifica rápido após o "for: 1m" da regra;
+#   repeat_interval 4h: o mesmo incidente não é renotificado a cada minuto
+#   (alert fatigue) — e o self-healing não reinicia o serviço em loop.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    group_by: [grafana_folder, alertname]
+    routes:
+      - receiver: togglemaster-incident
+        object_matchers:
+          - [team, =, togglemaster]
+        group_by: [alertname, service]
+        group_wait: 10s
+        group_interval: 1m
+        repeat_interval: 4h
