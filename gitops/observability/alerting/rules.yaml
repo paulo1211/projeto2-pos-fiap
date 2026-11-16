@@ -1,0 +1,69 @@
+# Regra de alerta do Grafana (provisionada pelo sidecar a partir do ConfigMap
+# grafana-alerting-togglemaster; ver ../kustomization.yaml).
+#
+# Taxa de erros HTTP 5xx do auth-service > 5%, calculada a partir das
+# métricas RED que o connector spanmetrics do otel-gateway gera dos traces
+# (mesma fonte do dashboard). Anti alert fatigue:
+#   - exige volume mínimo (> 0,1 req/s ≈ 12 requisições em 2 min): poucas
+#     requisições com 1 erro não viram incidente;
+#   - "for: 1m": a condição precisa se manter por 1 minuto;
+#   - sem tráfego (NoData) = OK, não abre incidente.
+# Labels deployment/namespace dizem ao self-healing o que reiniciar.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: togglemaster-slo
+    folder: ToggleMaster Alertas
+    interval: 30s
+    rules:
+      - uid: tm-auth-5xx-rate
+        title: auth-service — taxa de erros 5xx acima de 5%
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              expr: >-
+                100 * (
+                  sum(rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", service_name="auth-service", http_response_status_code=~"5.."}[2m]))
+                  or vector(0)
+                )
+                / (sum(rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", service_name="auth-service"}[2m])) > 0.1)
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          team: togglemaster
+          severity: critical
+          service: auth-service
+          namespace: togglemaster
+          deployment: auth-service
+        annotations:
+          summary: auth-service com taxa de erros 5xx acima de 5%
+          description: >-
+            Mais de 5% das requisições ao auth-service terminaram em 5xx nos
+            últimos 2 minutos. Impacto: flag-service e targeting-service não
+            validam chaves de API e o /evaluate falha. Ação automática:
+            rollout restart do deployment auth-service (self-healing).
+          runbook_url: https://github.com/paulo1211/projeto2-pos-fiap/blob/main/gitops/self-healing/README.md

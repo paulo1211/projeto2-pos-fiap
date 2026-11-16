@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,6 +20,10 @@ import (
 type App struct {
 	DB        *sql.DB
 	MasterKey string
+
+	// failValidate é a falha injetada pelo /admin/chaos (Etapa 3). Fica só
+	// na memória do pod: um rollout restart (self-healing) a remove.
+	failValidate atomic.Bool
 }
 
 func main() {
@@ -73,6 +78,8 @@ func main() {
 	// Endpoints de "admin" para criar/gerenciar chaves
 	// Eles são protegidos pelo middleware de autenticação
 	mux.Handle("/admin/keys", app.masterKeyAuthMiddleware(http.HandlerFunc(app.createKeyHandler)))
+	// Injeção de falha para o teste de incidente/self-healing (demo-incident.sh)
+	mux.Handle("/admin/chaos", app.masterKeyAuthMiddleware(http.HandlerFunc(app.chaosHandler)))
 
 	server := &http.Server{
 		Addr:              ":" + port,

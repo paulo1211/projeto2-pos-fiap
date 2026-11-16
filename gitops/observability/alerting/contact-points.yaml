@@ -1,0 +1,46 @@
+# Contact point "togglemaster-incident": um alerta, três integrações.
+#   - PagerDuty (Events API v2): abre o incidente e o resolve sozinho quando
+#     o alerta volta ao normal.
+#   - Discord (ChatOps): notificação detalhada no canal.
+#   - Webhook do self-healing (gitops/self-healing): rollout restart.
+#
+# Os valores ${...} vêm de variáveis de ambiente do Grafana, carregadas do
+# Secret alerting-secrets (terraform/scripts/sync-alerting-secrets.sh) — os
+# segredos nunca ficam no repositório. Por isso os templates abaixo não usam
+# "$" (o Grafana o interpretaria como variável de ambiente).
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: togglemaster-incident
+    receivers:
+      - uid: tm-pagerduty
+        type: pagerduty
+        settings:
+          integrationKey: ${PAGERDUTY_INTEGRATION_KEY}
+          severity: critical
+          class: http-5xx
+          component: '{{ .CommonLabels.service }}'
+          group: togglemaster
+          summary: '[ToggleMaster] {{ .CommonAnnotations.summary }}'
+      - uid: tm-discord
+        type: discord
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          use_discord_username: false
+          title: '{{ if eq .Status "firing" }}🔥 INCIDENTE{{ else }}✅ RESOLVIDO{{ end }}: {{ .CommonLabels.alertname }}'
+          message: |-
+            {{ range .Alerts }}**Serviço:** `{{ .Labels.service }}` (namespace `{{ .Labels.namespace }}`)
+            **Severidade:** {{ .Labels.severity }}
+            **Estado:** {{ .Status }}{{ with .Values }}{{ with .A }} · taxa de 5xx: **{{ printf "%.1f" . }}%**{{ end }}{{ end }}
+            **Início:** {{ .StartsAt.Format "02/01/2006 15:04:05 MST" }}{{ if eq .Status "resolved" }} · **Fim:** {{ .EndsAt.Format "15:04:05 MST" }}{{ end }}
+            {{ .Annotations.description }}
+            {{ if eq .Status "firing" }}🤖 Self-healing acionado: `kubectl rollout restart deployment/{{ .Labels.deployment }}`{{ end }}
+            📘 Runbook: {{ .Annotations.runbook_url }}
+            {{ end }}
+      - uid: tm-self-healing
+        type: webhook
+        settings:
+          url: http://self-healing.observability.svc.cluster.local:8080/alert
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${SELF_HEALING_TOKEN}

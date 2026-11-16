@@ -247,6 +247,10 @@ else
 fi
 has_secret "$OBS_NS" grafana-admin && ok "grafana-admin" \
   || warn "grafana-admin ausente → ./terraform/scripts/sync-observability-secrets.sh"
+has_secret "$OBS_NS" alerting-secrets && ok "alerting-secrets (PagerDuty, Discord, self-healing)" \
+  || warn "alerting-secrets ausente: alertas da Etapa 3 sem destino → ./terraform/scripts/sync-alerting-secrets.sh"
+kubectl -n "$OBS_NS" get deployment self-healing >/dev/null 2>&1 && ok "runbook self-healing" \
+  || warn "runbook self-healing ausente → kubectl apply -f gitops/argocd-apps/15-self-healing-app.yaml"
 has_secret "$OBS_NS" newrelic-license && ok "newrelic-license" \
   || warn "newrelic-license ausente: traces NÃO chegam ao New Relic → NEW_RELIC_LICENSE_KEY + sync-observability-secrets.sh"
 so_ready="$(kubectl -n "$APP_NS" get scaledobject -o json \

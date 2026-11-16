@@ -23,3 +23,13 @@ configMapGenerator:
         grafana_dashboard: "1"
       annotations:
         grafana_folder: ToggleMaster
+  # Alerting do Grafana (Etapa 3): regra de 5xx, contact points e política.
+  # O sidecar de alertas carrega ConfigMaps com o label grafana_alert=1.
+  - name: grafana-alerting-togglemaster
+    files:
+      - alerting/rules.yaml
+      - alerting/contact-points.yaml
+      - alerting/policies.yaml
+    options:
+      labels:
+        grafana_alert: "1"

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -64,6 +65,15 @@ func (a *App) validateKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	if keyString == "" {
 		http.Error(w, "Authorization header não encontrado", http.StatusUnauthorized)
+		return
+	}
+
+	// Falha injetada (/admin/chaos): simula um estado interno corrompido que o
+	// /health não detecta; só o alerta de 5xx percebe e o restart resolve.
+	if a.failValidate.Load() {
+		trace.SpanFromContext(r.Context()).SetStatus(codes.Error, "falha injetada")
+		logWithTrace(r.Context(), "Falha injetada (chaos): /validate respondendo 500")
+		http.Error(w, "Erro interno no serviço de autenticação", http.StatusInternalServerError)
 		return
 	}
 
@@ -159,4 +169,29 @@ func (a *App) masterKeyAuthMiddleware(next http.Handler) http.Handler {
 		// Se a chave for válida, continua para o handler principal
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ChaosRequest liga/desliga a falha injetada no /validate.
+type ChaosRequest struct {
+	Fail bool `json:"fail"`
+}
+
+// chaosHandler (POST /admin/chaos, protegido pela MASTER_KEY) liga ou desliga
+// a falha injetada neste pod. Usado pelo demo-incident.sh para provocar o
+// alerta de 5xx e demonstrar o self-healing (rollout restart).
+func (a *App) chaosHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ChaosRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		http.Error(w, "Corpo inválido: use {\"fail\": true|false}", http.StatusBadRequest)
+		return
+	}
+	a.failValidate.Store(req.Fail)
+	pod, _ := os.Hostname()
+	logWithTrace(r.Context(), "Chaos: falha injetada no /validate = %t (pod %s)", req.Fail, pod)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"fail": req.Fail, "pod": pod})
 }

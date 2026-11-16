@@ -86,6 +86,14 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
 
+  # Segredos dos contact points (PagerDuty, Discord, token do self-healing),
+  # usados como ${VAR} em gitops/observability/alerting/contact-points.yaml.
+  # Criado por terraform/scripts/sync-alerting-secrets.sh; optional para o
+  # Grafana subir mesmo antes de o Secret existir.
+  envFromSecrets:
+    - name: alerting-secrets
+      optional: true
+
   # Acesso autenticado pelo Kubernetes: kubectl port-forward svc/grafana 3000:80.
   service:
     type: ClusterIP
@@ -98,6 +106,12 @@ grafana:
       memory: 384Mi
 
   sidecar:
+    # Regras, contact points e políticas de alerta vêm de ConfigMaps com o
+    # label grafana_alert=1 (gitops/observability/alerting/).
+    alerts:
+      enabled: true
+      label: grafana_alert
+      labelValue: "1"
     datasources:
       # Datasource padrão do Prometheus criado pelo chart (uid "prometheus").
       uid: prometheus
