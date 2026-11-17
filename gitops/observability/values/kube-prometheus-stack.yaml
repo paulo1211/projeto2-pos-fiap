@@ -112,6 +112,15 @@ grafana:
       enabled: true
       label: grafana_alert
       labelValue: "1"
+      # Num pod novo o sidecar grava os arquivos e pede o reload antes de o
+      # Grafana estar no ar (connection refused); o padrão desiste em ~30 s e
+      # as regras só apareciam com reload manual. Mais tentativas, com
+      # backoff exponencial (1, 2, 4, ... s), cobrem a subida do Grafana
+      # (~1-2 min) sem perder o modo WATCH (mudanças no git recarregam sozinhas).
+      env:
+        REQ_RETRY_TOTAL: "12"
+        REQ_RETRY_CONNECT: "12"
+        REQ_RETRY_BACKOFF_FACTOR: "1"
     datasources:
       # Datasource padrão do Prometheus criado pelo chart (uid "prometheus").
       uid: prometheus
