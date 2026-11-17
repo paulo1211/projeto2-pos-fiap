@@ -150,7 +150,14 @@ forward_loop "$OBS_NS" svc/grafana "$GRAFANA_PORT" 80 & PIDS+=("$!")
 forward_loop "$APP_NS" "svc/$DEPLOY" "$AUTH_PORT" 8001 & PIDS+=("$!")
 wait_port "$GRAFANA_PORT" && wait_port "$AUTH_PORT" || fail "túneis para Grafana/auth-service não abriram"
 state=$(alert_state)
-[[ "$state" != "?" ]] || fail "regra '$RULE_PREFIX…' não encontrada no Grafana (ArgoCD sincronizou o alerting?)"
+if [[ "$state" == "?" ]]; then
+  # Pod novo do Grafana pode ter subido depois do reload do sidecar: recarrega.
+  warn "regra não encontrada; recarregando o provisionamento de alertas do Grafana"
+  curl -s -m 10 --netrc-file "$WORK/netrc" -X POST \
+    "http://localhost:$GRAFANA_PORT/api/admin/provisioning/alerting/reload" >/dev/null || true
+  sleep 3; state=$(alert_state)
+fi
+[[ "$state" != "?" ]] || fail "regra '$RULE_PREFIX…' não encontrada no Grafana (ArgoCD sincronizou o alerting? kubectl -n $OBS_NS logs deploy/grafana -c grafana-sc-alerts)"
 [[ "$state" == "inactive" || "$state" == "normal" ]] \
   || warn "alerta já está em '$state' antes do teste; o resultado pode se confundir"
 ok "regra de alerta no Grafana: $state"
